@@ -1,0 +1,6 @@
+@botilleria_clean_architecture_api_HostAddress = http://localhost:5280
+
+GET {{botilleria_clean_architecture_api_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
