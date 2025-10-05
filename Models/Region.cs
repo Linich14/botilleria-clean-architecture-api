@@ -1,7 +1,17 @@
+using System.ComponentModel.DataAnnotations;
+
 namespace botilleria_clean_architecture_api;
 
 public class Region
 {
     public int Id { get; set; }
-    public string Name { get; set; } = null!;
+    
+    [Required]
+    [MaxLength(100)]
+    public string Name { get; set; } = string.Empty;
+    
+    public int CountryId { get; set; }
+    public Country Country { get; set; } = null!;
+    
+    public ICollection<Origin> Origins { get; set; } = new List<Origin>();
 }

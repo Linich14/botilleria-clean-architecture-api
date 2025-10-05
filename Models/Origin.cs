@@ -1,15 +1,23 @@
 using Microsoft.EntityFrameworkCore;
+using System.ComponentModel.DataAnnotations;
 
 namespace botilleria_clean_architecture_api;
 
 public class Origin
 {
     public int Id { get; set; }
-    public int? CountryId { get; set; }
-    public Country? Country { get; set; }
-    public int? RegionId { get; set; }
-    public Region? Region { get; set; }
+    
+    public int CountryId { get; set; }
+    public int RegionId { get; set; }
+    
+    [MaxLength(100)]
     public string? Vineyard { get; set; }
+    
+    // Navigation Properties
+    public Country Country { get; set; } = null!;
+    public Region Region { get; set; } = null!;
+    
+    public ICollection<Product> Products { get; set; } = new List<Product>();
 }
 
 [Owned]

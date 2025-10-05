@@ -1,5 +1,4 @@
 using HotChocolate;
-// using HotChocolate.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
 using System.Text.Json;
 
@@ -7,7 +6,7 @@ namespace botilleria_clean_architecture_api.GraphQL;
 
 public class Mutation
 {
-    public async Task<Product> CreateProduct(Dtos.CreateProductDto input, [Service] ApplicationDbContext db)
+    public async Task<Product> CreateProduct(DTOs.CreateProductDto input, [Service] ApplicationDbContext db)
     {
         // Simplified: create or find related entities by name/id
         Category? category = null;

@@ -1,24 +1,26 @@
-namespace botilleria_clean_architecture_api.Dtos;
+namespace botilleria_clean_architecture_api.DTOs;
 
-public class ProductDto
+// DTO para transferir datos de productos (evita referencias circulares)
+// DTO for transferring product data (avoids circular references)
+public record ProductDto
 {
-    public int Id { get; set; }
-    public string Name { get; set; } = null!;
-    public string? Description { get; set; }
-    public decimal Price { get; set; }
-    public decimal? DiscountPrice { get; set; }
-    public int? Volume { get; set; }
-    public string? Unit { get; set; }
-    public decimal? AlcoholContent { get; set; }
-    public int Stock { get; set; }
-    public bool IsAvailable { get; set; }
-    public DateTime CreatedAt { get; set; }
-    public DateTime? UpdatedAt { get; set; }
-    public RelationDto? Category { get; set; }
-    public RelationDto? Type { get; set; }
-    public RelationDto? Brand { get; set; }
-    public OriginDto? Origin { get; set; }
-    public CharacteristicsDto? Characteristics { get; set; }
-    public ReviewsDto? Reviews { get; set; }
-    public SelfDto? Self { get; set; }
+    public int Id { get; init; }
+    public string Name { get; init; } = string.Empty;
+    public string? Description { get; init; }
+    public decimal Price { get; init; }
+    public decimal? DiscountPrice { get; init; }
+    public int Volume { get; init; }
+    public string Unit { get; init; } = "ml";
+    public decimal? AlcoholContent { get; init; }
+    public int Stock { get; init; }
+    public bool IsAvailable { get; init; }
+    public DateTime CreatedAt { get; init; }
+    public DateTime UpdatedAt { get; init; }
+    public int? Vintage { get; init; }
+    
+    public CategoryDto? Category { get; init; }
+    public ProductTypeDto? ProductType { get; init; }
+    public BrandDto? Brand { get; init; }
+    public OriginDto? Origin { get; init; }
+    public ProductCharacteristicsDto? Characteristics { get; init; }
 }
