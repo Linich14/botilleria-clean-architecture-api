@@ -33,24 +33,56 @@ public class Mutation
             if (ptype == null) { ptype = new ProductType { Name = input.Type.Name }; db.ProductTypes.Add(ptype); }
         }
 
-        Country? country = null;
-        if (input.Origin?.Country?.Id is > 0) country = await db.Countries.FindAsync(input.Origin.Country.Id);
-        else if (!string.IsNullOrWhiteSpace(input.Origin?.Country?.Name))
+        // Handle Origin with Country and Region (both required by Origin model)
+        Origin? origin = null;
+        if (input.Origin != null)
         {
-            country = await db.Countries.FirstOrDefaultAsync(c => c.Name == input.Origin.Country.Name);
-            if (country == null) { country = new Country { Name = input.Origin.Country.Name, IsoCode = input.Origin.Country.Subcategory }; db.Countries.Add(country); }
-        }
+            Country? country = null;
+            if (input.Origin.Country?.Id is > 0) 
+            {
+                country = await db.Countries.FindAsync(input.Origin.Country.Id);
+            }
+            else if (!string.IsNullOrWhiteSpace(input.Origin.Country?.Name))
+            {
+                country = await db.Countries.FirstOrDefaultAsync(c => c.Name == input.Origin.Country.Name);
+                if (country == null) 
+                { 
+                    // IsoCode is required, use Subcategory or default to first 2 chars of name
+                    string isoCode = !string.IsNullOrWhiteSpace(input.Origin.Country.Subcategory) 
+                        ? input.Origin.Country.Subcategory 
+                        : input.Origin.Country.Name.Length >= 2 
+                            ? input.Origin.Country.Name.Substring(0, 2).ToUpper() 
+                            : "XX";
+                    
+                    country = new Country { Name = input.Origin.Country.Name, IsoCode = isoCode }; 
+                    db.Countries.Add(country); 
+                    await db.SaveChangesAsync(); // Save to get Country ID for FK
+                }
+            }
 
-        Region? region = null;
-        if (input.Origin?.Region?.Id is > 0) region = await db.Regions.FindAsync(input.Origin.Region.Id);
-        else if (!string.IsNullOrWhiteSpace(input.Origin?.Region?.Name))
-        {
-            region = await db.Regions.FirstOrDefaultAsync(r => r.Name == input.Origin.Region.Name);
-            if (region == null) { region = new Region { Name = input.Origin.Region.Name }; db.Regions.Add(region); }
-        }
+            Region? region = null;
+            if (input.Origin.Region?.Id is > 0) 
+            {
+                region = await db.Regions.FindAsync(input.Origin.Region.Id);
+            }
+            else if (!string.IsNullOrWhiteSpace(input.Origin.Region?.Name) && country != null)
+            {
+                region = await db.Regions.FirstOrDefaultAsync(r => r.Name == input.Origin.Region.Name && r.CountryId == country.Id);
+                if (region == null) 
+                { 
+                    region = new Region { Name = input.Origin.Region.Name, Country = country }; 
+                    db.Regions.Add(region); 
+                    await db.SaveChangesAsync(); // Save to get Region ID for FK
+                }
+            }
 
-        Origin origin = new Origin { Country = country, Region = region, Vineyard = input.Origin?.Vineyard };
-        db.Origins.Add(origin);
+            // Only create Origin if both Country and Region exist (both are required by the model)
+            if (country != null && region != null)
+            {
+                origin = new Origin { Country = country, Region = region, Vineyard = input.Origin.Vineyard };
+                db.Origins.Add(origin);
+            }
+        }
 
         var product = new Product
         {
@@ -67,7 +99,6 @@ public class Mutation
             UpdatedAt = input.UpdatedAt,
             Category = category,
             Brand = brand,
-            ProductType = ptype,
             Origin = origin,
             Characteristics = input.Characteristics == null ? null : new Characteristics { Color = input.Characteristics.Color, Aroma = input.Characteristics.Aroma, Taste = input.Characteristics.Taste, ServingTemperature = input.Characteristics.ServingTemperature, FoodPairingJson = input.Characteristics.FoodPairing == null ? null : JsonSerializer.Serialize(input.Characteristics.FoodPairing) },
             ReviewsCount = input.Reviews?.Count ?? 0,

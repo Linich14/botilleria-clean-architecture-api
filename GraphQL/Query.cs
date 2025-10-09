@@ -1,4 +1,4 @@
-using HotChocolate;
+ using HotChocolate;
 
 namespace botilleria_clean_architecture_api.GraphQL;
 

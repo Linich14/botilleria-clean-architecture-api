@@ -264,24 +264,56 @@ app.MapPost("/api/products", [Microsoft.AspNetCore.Authorization.Authorize] asyn
         if (ptype == null) { ptype = new ProductType { Name = dto.Type.Name }; db.ProductTypes.Add(ptype); }
     }
 
-    Country? country = null;
-    if (dto.Origin?.Country?.Id is > 0) country = await db.Countries.FindAsync(dto.Origin.Country.Id);
-    else if (!string.IsNullOrWhiteSpace(dto.Origin?.Country?.Name))
+    // Handle Origin with Country and Region (both required by Origin model)
+    Origin? origin = null;
+    if (dto.Origin != null)
     {
-        country = await db.Countries.FirstOrDefaultAsync(c => c.Name == dto.Origin.Country.Name);
-        if (country == null) { country = new Country { Name = dto.Origin.Country.Name, IsoCode = dto.Origin.Country.Subcategory }; db.Countries.Add(country); }
-    }
+        Country? country = null;
+        if (dto.Origin.Country?.Id is > 0) 
+        {
+            country = await db.Countries.FindAsync(dto.Origin.Country.Id);
+        }
+        else if (!string.IsNullOrWhiteSpace(dto.Origin.Country?.Name))
+        {
+            country = await db.Countries.FirstOrDefaultAsync(c => c.Name == dto.Origin.Country.Name);
+            if (country == null) 
+            { 
+                // IsoCode is required, use Subcategory or default to first 2 chars of name
+                string isoCode = !string.IsNullOrWhiteSpace(dto.Origin.Country.Subcategory) 
+                    ? dto.Origin.Country.Subcategory 
+                    : dto.Origin.Country.Name.Length >= 2 
+                        ? dto.Origin.Country.Name.Substring(0, 2).ToUpper() 
+                        : "XX";
+                
+                country = new Country { Name = dto.Origin.Country.Name, IsoCode = isoCode }; 
+                db.Countries.Add(country); 
+                await db.SaveChangesAsync(); // Save to get Country ID for FK
+            }
+        }
 
-    Region? region = null;
-    if (dto.Origin?.Region?.Id is > 0) region = await db.Regions.FindAsync(dto.Origin.Region.Id);
-    else if (!string.IsNullOrWhiteSpace(dto.Origin?.Region?.Name))
-    {
-        region = await db.Regions.FirstOrDefaultAsync(r => r.Name == dto.Origin.Region.Name);
-        if (region == null) { region = new Region { Name = dto.Origin.Region.Name }; db.Regions.Add(region); }
-    }
+        Region? region = null;
+        if (dto.Origin.Region?.Id is > 0) 
+        {
+            region = await db.Regions.FindAsync(dto.Origin.Region.Id);
+        }
+        else if (!string.IsNullOrWhiteSpace(dto.Origin.Region?.Name) && country != null)
+        {
+            region = await db.Regions.FirstOrDefaultAsync(r => r.Name == dto.Origin.Region.Name && r.CountryId == country.Id);
+            if (region == null) 
+            { 
+                region = new Region { Name = dto.Origin.Region.Name, Country = country }; 
+                db.Regions.Add(region); 
+                await db.SaveChangesAsync(); // Save to get Region ID for FK
+            }
+        }
 
-    Origin origin = new Origin { Country = country, Region = region, Vineyard = dto.Origin?.Vineyard };
-    db.Origins.Add(origin);
+        // Only create Origin if both Country and Region exist (both are required by the model)
+        if (country != null && region != null)
+        {
+            origin = new Origin { Country = country, Region = region, Vineyard = dto.Origin.Vineyard };
+            db.Origins.Add(origin);
+        }
+    }
 
     var product = new Product
     {

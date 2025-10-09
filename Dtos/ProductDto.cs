@@ -1,3 +1,4 @@
+
 namespace botilleria_clean_architecture_api.DTOs;
 
 // DTO para transferir datos de productos (evita referencias circulares)
