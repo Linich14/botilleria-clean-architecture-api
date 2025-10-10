@@ -8,10 +8,12 @@ namespace botilleria_clean_architecture_api.Core.Application.Services;
 public class BrandService
 {
     private readonly IUnitOfWork _unitOfWork;
+    private readonly AuditService _auditService;
 
-    public BrandService(IUnitOfWork unitOfWork)
+    public BrandService(IUnitOfWork unitOfWork, AuditService auditService)
     {
         _unitOfWork = unitOfWork;
+        _auditService = auditService;
     }
 
     public async Task<Brand> CreateBrandAsync(CreateBrandCommand command)
@@ -22,6 +24,10 @@ public class BrandService
         };
 
         await _unitOfWork.Brands.AddAsync(brand);
+
+        // Registrar operación de creación para auditoría
+        await _auditService.LogOperationAsync("CREATE", "Brand", brand.Id, null, brand);
+
         return brand;
     }
 
@@ -30,9 +36,16 @@ public class BrandService
         var brand = await _unitOfWork.Brands.GetByIdAsync(command.Id);
         if (brand == null) return null;
 
+        // Capturar valores antiguos para auditoría
+        var oldValues = new { brand.Name };
+
         brand.Name = command.Name;
 
         await _unitOfWork.Brands.UpdateAsync(brand);
+
+        // Registrar operación de actualización para auditoría
+        await _auditService.LogOperationAsync("UPDATE", "Brand", brand.Id, oldValues, brand);
+
         return brand;
     }
 
@@ -41,7 +54,14 @@ public class BrandService
         var brand = await _unitOfWork.Brands.GetByIdAsync(command.Id);
         if (brand == null) return false;
 
+        // Capturar valores para auditoría antes de eliminar
+        var oldValues = new { brand.Name };
+
         await _unitOfWork.Brands.DeleteAsync(brand);
+
+        // Registrar operación de eliminación para auditoría
+        await _auditService.LogOperationAsync("DELETE", "Brand", command.Id, oldValues, null);
+
         return true;
     }
 

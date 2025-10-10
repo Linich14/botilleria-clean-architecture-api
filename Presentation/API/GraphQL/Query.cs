@@ -1,3 +1,4 @@
+// Consultas flexibles para explorar datos de manera personalizada
 using HotChocolate;
 using botilleria_clean_architecture_api.Core.Domain.Entities;
 using botilleria_clean_architecture_api.Core.Application.Services;

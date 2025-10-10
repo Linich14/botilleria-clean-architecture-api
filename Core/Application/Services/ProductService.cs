@@ -1,3 +1,4 @@
+// Coordinar operaciones de productos manteniendo la lógica de negocio centralizada
 using botilleria_clean_architecture_api.Core.Application.DTOs.Commands;
 using botilleria_clean_architecture_api.Core.Application.DTOs.Queries;
 using botilleria_clean_architecture_api.Core.Domain.Entities;
@@ -8,10 +9,12 @@ namespace botilleria_clean_architecture_api.Core.Application.Services;
 public class ProductService
 {
     private readonly IUnitOfWork _unitOfWork;
+    private readonly AuditService _auditService;
 
-    public ProductService(IUnitOfWork unitOfWork)
+    public ProductService(IUnitOfWork unitOfWork, AuditService auditService)
     {
         _unitOfWork = unitOfWork;
+        _auditService = auditService;
     }
 
     public async Task<Product> CreateProductAsync(CreateProductCommand command)
@@ -61,6 +64,11 @@ public class ProductService
         }
 
         await _unitOfWork.Products.AddAsync(product);
+        await _unitOfWork.SaveChangesAsync();
+
+        // Registrar operación de creación para auditoría
+        await _auditService.LogOperationAsync("CREATE", "Product", product.Id, null, command);
+
         return product;
     }
 
@@ -68,6 +76,20 @@ public class ProductService
     {
         var product = await _unitOfWork.Products.GetByIdAsync(command.Id);
         if (product == null) return null;
+
+        // Capturar valores antiguos para auditoría
+        var oldValues = new
+        {
+            product.Name,
+            product.Description,
+            product.Price,
+            product.DiscountPrice,
+            product.Volume,
+            product.Unit,
+            product.AlcoholContent,
+            product.Stock,
+            product.IsAvailable
+        };
 
         product.Name = command.Name;
         product.Description = command.Description;
@@ -96,6 +118,10 @@ public class ProductService
         product.OriginId = command.OriginId;
 
         await _unitOfWork.Products.UpdateAsync(product);
+
+        // Registrar operación de actualización para auditoría
+        await _auditService.LogOperationAsync("UPDATE", "Product", product.Id, oldValues, command);
+
         return product;
     }
 
@@ -104,7 +130,20 @@ public class ProductService
         var product = await _unitOfWork.Products.GetByIdAsync(command.Id);
         if (product == null) return false;
 
+        // Capturar valores para auditoría antes de eliminar
+        var oldValues = new
+        {
+            product.Name,
+            product.Description,
+            product.Price,
+            product.Stock
+        };
+
         await _unitOfWork.Products.DeleteAsync(product);
+
+        // Registrar operación de eliminación para auditoría
+        await _auditService.LogOperationAsync("DELETE", "Product", command.Id, oldValues, null);
+
         return true;
     }
 

@@ -1,3 +1,4 @@
+// Exponer operaciones de productos a través de HTTP
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using botilleria_clean_architecture_api.Core.Application.Services;

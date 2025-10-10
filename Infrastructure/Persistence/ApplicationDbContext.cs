@@ -1,3 +1,4 @@
+// Puente entre el dominio y el almacenamiento físico de datos
 using Microsoft.EntityFrameworkCore;
 using botilleria_clean_architecture_api.Core.Domain.Entities;
 
@@ -18,6 +19,7 @@ public class ApplicationDbContext : DbContext
     public DbSet<Country> Countries { get; set; } = null!;
     public DbSet<Region> Regions { get; set; } = null!;
     public DbSet<Origin> Origins { get; set; } = null!;
+    public DbSet<AuditLog> AuditLogs { get; set; } = null!;
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

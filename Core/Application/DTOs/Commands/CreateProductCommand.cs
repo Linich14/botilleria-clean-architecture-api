@@ -1,3 +1,4 @@
+// Datos necesarios para registrar un nuevo producto en el sistema
 namespace botilleria_clean_architecture_api.Core.Application.DTOs.Commands;
 
 public class CreateProductCommand

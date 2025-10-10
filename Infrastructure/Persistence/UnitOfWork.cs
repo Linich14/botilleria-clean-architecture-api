@@ -1,3 +1,4 @@
+// Gestionar transacciones de base de datos asegurando atomicidad
 using botilleria_clean_architecture_api.Core.Domain.Interfaces;
 using Microsoft.EntityFrameworkCore.Storage;
 using botilleria_clean_architecture_api.Infrastructure.Persistence.Repositories;
@@ -21,6 +22,7 @@ public class UnitOfWork : IUnitOfWork
     private ICountryRepository? _countries;
     private IRegionRepository? _regions;
     private IOriginRepository? _origins;
+    private IAuditLogRepository? _auditLogs;
 
     public IProductRepository Products => _products ??= new ProductRepository(_context);
     public IBrandRepository Brands => _brands ??= new BrandRepository(_context);
@@ -29,6 +31,7 @@ public class UnitOfWork : IUnitOfWork
     public ICountryRepository Countries => _countries ??= new CountryRepository(_context);
     public IRegionRepository Regions => _regions ??= new RegionRepository(_context);
     public IOriginRepository Origins => _origins ??= new OriginRepository(_context);
+    public IAuditLogRepository AuditLogs => _auditLogs ??= new AuditLogRepository(_context);
 
     public async Task<int> SaveChangesAsync()
     {

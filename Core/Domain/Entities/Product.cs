@@ -1,3 +1,4 @@
+// Representar un producto de la botillería con sus características esenciales
 using System.Text.Json.Serialization;
 
 namespace botilleria_clean_architecture_api.Core.Domain.Entities;

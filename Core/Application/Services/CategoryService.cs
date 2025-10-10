@@ -8,10 +8,12 @@ namespace botilleria_clean_architecture_api.Core.Application.Services;
 public class CategoryService
 {
     private readonly IUnitOfWork _unitOfWork;
+    private readonly AuditService _auditService;
 
-    public CategoryService(IUnitOfWork unitOfWork)
+    public CategoryService(IUnitOfWork unitOfWork, AuditService auditService)
     {
         _unitOfWork = unitOfWork;
+        _auditService = auditService;
     }
 
     public async Task<Category> CreateCategoryAsync(CreateCategoryCommand command)
@@ -23,6 +25,10 @@ public class CategoryService
         };
 
         await _unitOfWork.Categories.AddAsync(category);
+
+        // Registrar operación de creación para auditoría
+        await _auditService.LogOperationAsync("CREATE", "Category", category.Id, null, category);
+
         return category;
     }
 
@@ -31,10 +37,17 @@ public class CategoryService
         var category = await _unitOfWork.Categories.GetByIdAsync(command.Id);
         if (category == null) return null;
 
+        // Capturar valores antiguos para auditoría
+        var oldValues = new { category.Name, category.Subcategory };
+
         category.Name = command.Name;
         category.Subcategory = command.Subcategory;
 
         await _unitOfWork.Categories.UpdateAsync(category);
+
+        // Registrar operación de actualización para auditoría
+        await _auditService.LogOperationAsync("UPDATE", "Category", category.Id, oldValues, category);
+
         return category;
     }
 
@@ -43,7 +56,14 @@ public class CategoryService
         var category = await _unitOfWork.Categories.GetByIdAsync(command.Id);
         if (category == null) return false;
 
+        // Capturar valores para auditoría antes de eliminar
+        var oldValues = new { category.Name, category.Subcategory };
+
         await _unitOfWork.Categories.DeleteAsync(category);
+
+        // Registrar operación de eliminación para auditoría
+        await _auditService.LogOperationAsync("DELETE", "Category", command.Id, oldValues, null);
+
         return true;
     }
 

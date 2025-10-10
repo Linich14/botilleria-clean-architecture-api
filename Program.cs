@@ -18,19 +18,21 @@ using botilleria_clean_architecture_api.Infrastructure.Persistence.Repositories;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Add services to the container.
-// Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
+// Configurar servicios base de la aplicación
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 builder.Services.AddDbContext<ApplicationDbContext>(options =>
     options.UseSqlite(builder.Configuration.GetConnectionString("DefaultConnection")));
 
-// Enable Newtonsoft for JSON Patch support
-builder.Services.AddControllers().AddNewtonsoftJson();
+// Soporte para operaciones complejas de JSON
+builder.Services.AddControllers().AddNewtonsoftJson(options =>
+{
+    options.SerializerSettings.ReferenceLoopHandling = Newtonsoft.Json.ReferenceLoopHandling.Ignore;
+});
+builder.Services.AddHttpContextAccessor(); // Para acceder al contexto HTTP en servicios
 
-// Configuración de autenticación JWT para proteger endpoints POST
-// JWT Authentication setup to protect POST endpoints
-var key = Encoding.UTF8.GetBytes("0123456789abcdef0123456789abcdef"); // Clave de 256 bits para HMAC-SHA256
+// Proteger operaciones de escritura con tokens de acceso
+var key = Encoding.UTF8.GetBytes("0123456789abcdef0123456789abcdef");
 builder.Services.AddAuthentication(options =>
 {
     options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
@@ -38,19 +40,19 @@ builder.Services.AddAuthentication(options =>
 })
     .AddJwtBearer(options =>
     {
-        options.RequireHttpsMetadata = false; // Permitir HTTP en desarrollo
+        options.RequireHttpsMetadata = false;
         options.SaveToken = true;
         options.TokenValidationParameters = new TokenValidationParameters
         {
-            ValidateIssuer = false, // No validar emisor en demo
-            ValidateAudience = false, // No validar audiencia en demo
+            ValidateIssuer = false,
+            ValidateAudience = false,
             ValidateIssuerSigningKey = true,
             IssuerSigningKey = new SymmetricSecurityKey(key),
-            ValidateLifetime = false // No expirar tokens en demo
+            ValidateLifetime = false
         };
     });
 
-// GraphQL
+// Consultas avanzadas y modificaciones de datos
 builder.Services
     .AddGraphQLServer()
     .AddQueryType<botilleria_clean_architecture_api.Presentation.API.GraphQL.Query>()
@@ -59,7 +61,7 @@ builder.Services
     .AddFiltering()
     .AddSorting();
 
-// Dependency Injection Configuration
+// Inyectar servicios para mantener el código desacoplado
 builder.Services.AddScoped<IUnitOfWork, UnitOfWork>();
 builder.Services.AddScoped<IProductRepository, ProductRepository>();
 builder.Services.AddScoped<IBrandRepository, BrandRepository>();
@@ -68,6 +70,7 @@ builder.Services.AddScoped<IProductTypeRepository, ProductTypeRepository>();
 builder.Services.AddScoped<ICountryRepository, CountryRepository>();
 builder.Services.AddScoped<IRegionRepository, RegionRepository>();
 builder.Services.AddScoped<IOriginRepository, OriginRepository>();
+builder.Services.AddScoped<IAuditLogRepository, AuditLogRepository>();
 
 builder.Services.AddScoped<ProductService>();
 builder.Services.AddScoped<BrandService>();
@@ -76,48 +79,50 @@ builder.Services.AddScoped<ProductTypeService>();
 builder.Services.AddScoped<CountryService>();
 builder.Services.AddScoped<RegionService>();
 builder.Services.AddScoped<OriginService>();
+builder.Services.AddScoped<AuditService>();
 
 var app = builder.Build();
 
-// Configure the HTTP request pipeline.
+// Configurar el flujo de procesamiento de solicitudes
 if (app.Environment.IsDevelopment())
 {
 app.UseSwagger();
 app.UseSwaggerUI();
 }
 
-// Solo usar HTTPS redirection si hay un puerto HTTPS configurado
-// Only use HTTPS redirection if HTTPS port is configured
+// Redirigir a HTTPS solo cuando sea necesario
 if (!string.IsNullOrEmpty(Environment.GetEnvironmentVariable("ASPNETCORE_HTTPS_PORT")) ||
     app.Configuration.GetValue<bool>("UseHttpsRedirection", false))
 {
     app.UseHttpsRedirection();
 }
 
+// Verificar identidad del usuario antes de procesar solicitudes
 app.UseAuthentication();
-app.UseAuthorization();// Endpoint de autenticación para obtener token JWT
-// Authentication endpoint to get JWT token
+app.UseAuthorization();
+
+// Punto de acceso para obtener credenciales de acceso
 app.MapPost("/api/auth/login", (LoginRequest request) =>
 {
-    if (request.Password == "secret123") // Contraseña demo
+    if (request.Password == "secret123")
     {
         var tokenHandler = new JwtSecurityTokenHandler();
         var tokenDescriptor = new SecurityTokenDescriptor
         {
-            Expires = DateTime.UtcNow.AddHours(1), // Token válido por 1 hora
+            Expires = DateTime.UtcNow.AddHours(1),
             SigningCredentials = new SigningCredentials(new SymmetricSecurityKey(key), SecurityAlgorithms.HmacSha256Signature)
         };
         var token = tokenHandler.CreateToken(tokenDescriptor);
         var tokenString = tokenHandler.WriteToken(token);
-        return Results.Ok(new { Token = tokenString }); // Retornar token en JSON
+        return Results.Ok(new { Token = tokenString });
     }
-    return Results.Unauthorized(); // 401 si contraseña incorrecta
+    return Results.Unauthorized();
 }).WithName("Login");
 
-// Minimal API endpoints removed - functionality moved to controllers for clean architecture
-// GraphQL endpoint
+// Punto de acceso para consultas avanzadas
 app.MapGraphQL("/graphql");
 
+// Activar todos los controladores de la aplicación
 app.MapControllers();
 
 app.Run();
