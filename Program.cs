@@ -343,10 +343,18 @@ app.MapPost("/api/products", [Microsoft.AspNetCore.Authorization.Authorize] asyn
     return Results.Created($"/api/products/{product.Id}", product);
 }).WithName("CreateProduct");
 
-app.MapPut("/api/products/{id:int}", async (int id, CreateProductDto dto, ApplicationDbContext db) =>
+app.MapPut("/api/products/{id:int}", [Microsoft.AspNetCore.Authorization.Authorize] async (int id, CreateProductDto dto, ApplicationDbContext db) =>
 {
-    var existing = await db.Products.FindAsync(id);
+    var existing = await db.Products
+        .Include(p => p.Category)
+        .Include(p => p.Brand)
+        .Include(p => p.ProductType)
+        .Include(p => p.Origin)
+        .FirstOrDefaultAsync(p => p.Id == id);
+    
     if (existing == null) return Results.NotFound();
+    
+    // Update basic fields
     existing.Name = dto.Name;
     existing.Description = dto.Description;
     existing.Price = dto.Price;
@@ -357,8 +365,155 @@ app.MapPut("/api/products/{id:int}", async (int id, CreateProductDto dto, Applic
     existing.Stock = dto.Stock;
     existing.IsAvailable = dto.IsAvailable;
     existing.UpdatedAt = DateTime.UtcNow;
+    
+    // Update Category
+    if (dto.Category?.Id is > 0)
+    {
+        existing.Category = await db.Categories.FindAsync(dto.Category.Id);
+    }
+    else if (!string.IsNullOrWhiteSpace(dto.Category?.Name))
+    {
+        var category = await db.Categories.FirstOrDefaultAsync(c => c.Name == dto.Category.Name);
+        if (category == null)
+        {
+            category = new Category { Name = dto.Category.Name, Subcategory = dto.Category.Subcategory };
+            db.Categories.Add(category);
+        }
+        existing.Category = category;
+    }
+    else if (dto.Category == null)
+    {
+        existing.Category = null;
+        existing.CategoryId = null;
+    }
+    
+    // Update Brand
+    if (dto.Brand?.Id is > 0)
+    {
+        existing.Brand = await db.Brands.FindAsync(dto.Brand.Id);
+    }
+    else if (!string.IsNullOrWhiteSpace(dto.Brand?.Name))
+    {
+        var brand = await db.Brands.FirstOrDefaultAsync(b => b.Name == dto.Brand.Name);
+        if (brand == null)
+        {
+            brand = new Brand { Name = dto.Brand.Name };
+            db.Brands.Add(brand);
+        }
+        existing.Brand = brand;
+    }
+    else if (dto.Brand == null)
+    {
+        existing.Brand = null;
+        existing.BrandId = null;
+    }
+    
+    // Update ProductType
+    if (dto.Type?.Id is > 0)
+    {
+        existing.ProductType = await db.ProductTypes.FindAsync(dto.Type.Id);
+    }
+    else if (!string.IsNullOrWhiteSpace(dto.Type?.Name))
+    {
+        var ptype = await db.ProductTypes.FirstOrDefaultAsync(t => t.Name == dto.Type.Name);
+        if (ptype == null)
+        {
+            ptype = new ProductType { Name = dto.Type.Name };
+            db.ProductTypes.Add(ptype);
+        }
+        existing.ProductType = ptype;
+    }
+    else if (dto.Type == null)
+    {
+        existing.ProductType = null;
+        existing.ProductTypeId = null;
+    }
+    
+    // Update Origin
+    if (dto.Origin != null)
+    {
+        Country? country = null;
+        if (dto.Origin.Country?.Id is > 0)
+        {
+            country = await db.Countries.FindAsync(dto.Origin.Country.Id);
+        }
+        else if (!string.IsNullOrWhiteSpace(dto.Origin.Country?.Name))
+        {
+            country = await db.Countries.FirstOrDefaultAsync(c => c.Name == dto.Origin.Country.Name);
+            if (country == null)
+            {
+                string isoCode = !string.IsNullOrWhiteSpace(dto.Origin.Country.Subcategory)
+                    ? dto.Origin.Country.Subcategory
+                    : dto.Origin.Country.Name.Length >= 2
+                        ? dto.Origin.Country.Name.Substring(0, 2).ToUpper()
+                        : "XX";
+                
+                country = new Country { Name = dto.Origin.Country.Name, IsoCode = isoCode };
+                db.Countries.Add(country);
+                await db.SaveChangesAsync();
+            }
+        }
+        
+        Region? region = null;
+        if (dto.Origin.Region?.Id is > 0)
+        {
+            region = await db.Regions.FindAsync(dto.Origin.Region.Id);
+        }
+        else if (!string.IsNullOrWhiteSpace(dto.Origin.Region?.Name) && country != null)
+        {
+            region = await db.Regions.FirstOrDefaultAsync(r => r.Name == dto.Origin.Region.Name && r.CountryId == country.Id);
+            if (region == null)
+            {
+                region = new Region { Name = dto.Origin.Region.Name, Country = country };
+                db.Regions.Add(region);
+                await db.SaveChangesAsync();
+            }
+        }
+        
+        if (country != null && region != null)
+        {
+            if (existing.Origin != null)
+            {
+                // Update existing Origin
+                existing.Origin.Country = country;
+                existing.Origin.Region = region;
+                existing.Origin.Vineyard = dto.Origin.Vineyard;
+            }
+            else
+            {
+                // Create new Origin
+                existing.Origin = new Origin { Country = country, Region = region, Vineyard = dto.Origin.Vineyard };
+            }
+        }
+    }
+    else if (dto.Origin == null)
+    {
+        existing.Origin = null;
+        existing.OriginId = null;
+    }
+    
+    // Update Characteristics
+    if (dto.Characteristics != null)
+    {
+        if (existing.Characteristics == null)
+        {
+            existing.Characteristics = new Characteristics();
+        }
+        existing.Characteristics.Color = dto.Characteristics.Color;
+        existing.Characteristics.Aroma = dto.Characteristics.Aroma;
+        existing.Characteristics.Taste = dto.Characteristics.Taste;
+        existing.Characteristics.ServingTemperature = dto.Characteristics.ServingTemperature;
+        existing.Characteristics.FoodPairingJson = dto.Characteristics.FoodPairing == null 
+            ? null 
+            : System.Text.Json.JsonSerializer.Serialize(dto.Characteristics.FoodPairing);
+    }
+    else if (dto.Characteristics == null)
+    {
+        existing.Characteristics = null;
+    }
+    
     await db.SaveChangesAsync();
-    return Results.NoContent();
+    return Results.Ok(existing);
 }).WithName("UpdateProduct");
 
 app.MapDelete("/api/products/{id:int}", async (int id, ApplicationDbContext db) =>
