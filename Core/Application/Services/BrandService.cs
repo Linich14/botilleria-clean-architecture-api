@@ -7,11 +7,11 @@ namespace botilleria_clean_architecture_api.Core.Application.Services;
 
 public class BrandService
 {
-    private readonly IBrandRepository _brandRepository;
+    private readonly IUnitOfWork _unitOfWork;
 
-    public BrandService(IBrandRepository brandRepository)
+    public BrandService(IUnitOfWork unitOfWork)
     {
-        _brandRepository = brandRepository;
+        _unitOfWork = unitOfWork;
     }
 
     public async Task<Brand> CreateBrandAsync(CreateBrandCommand command)
@@ -21,37 +21,37 @@ public class BrandService
             Name = command.Name
         };
 
-        await _brandRepository.AddAsync(brand);
+        await _unitOfWork.Brands.AddAsync(brand);
         return brand;
     }
 
     public async Task<Brand?> UpdateBrandAsync(UpdateBrandCommand command)
     {
-        var brand = await _brandRepository.GetByIdAsync(command.Id);
+        var brand = await _unitOfWork.Brands.GetByIdAsync(command.Id);
         if (brand == null) return null;
 
         brand.Name = command.Name;
 
-        await _brandRepository.UpdateAsync(brand);
+        await _unitOfWork.Brands.UpdateAsync(brand);
         return brand;
     }
 
     public async Task<bool> DeleteBrandAsync(DeleteBrandCommand command)
     {
-        var brand = await _brandRepository.GetByIdAsync(command.Id);
+        var brand = await _unitOfWork.Brands.GetByIdAsync(command.Id);
         if (brand == null) return false;
 
-        await _brandRepository.DeleteAsync(brand);
+        await _unitOfWork.Brands.DeleteAsync(brand);
         return true;
     }
 
     public async Task<Brand?> GetBrandAsync(GetBrandQuery query)
     {
-        return await _brandRepository.GetByIdAsync(query.Id);
+        return await _unitOfWork.Brands.GetByIdAsync(query.Id);
     }
 
     public async Task<IEnumerable<Brand>> GetBrandsAsync(GetBrandsQuery query)
     {
-        return await _brandRepository.GetAllAsync();
+        return await _unitOfWork.Brands.GetAllAsync();
     }
 }

@@ -12,6 +12,9 @@ using Microsoft.AspNetCore.JsonPatch;
 using Microsoft.AspNetCore.Mvc;
 using botilleria_clean_architecture_api.Core.Application.DTOs;
 using HotChocolate.AspNetCore;
+using botilleria_clean_architecture_api.Core.Domain.Interfaces;
+using botilleria_clean_architecture_api.Core.Application.Services;
+using botilleria_clean_architecture_api.Infrastructure.Persistence.Repositories;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -56,20 +59,43 @@ builder.Services
     .AddFiltering()
     .AddSorting();
 
+// Dependency Injection Configuration
+builder.Services.AddScoped<IUnitOfWork, UnitOfWork>();
+builder.Services.AddScoped<IProductRepository, ProductRepository>();
+builder.Services.AddScoped<IBrandRepository, BrandRepository>();
+builder.Services.AddScoped<ICategoryRepository, CategoryRepository>();
+builder.Services.AddScoped<IProductTypeRepository, ProductTypeRepository>();
+builder.Services.AddScoped<ICountryRepository, CountryRepository>();
+builder.Services.AddScoped<IRegionRepository, RegionRepository>();
+builder.Services.AddScoped<IOriginRepository, OriginRepository>();
+
+builder.Services.AddScoped<ProductService>();
+builder.Services.AddScoped<BrandService>();
+builder.Services.AddScoped<CategoryService>();
+builder.Services.AddScoped<ProductTypeService>();
+builder.Services.AddScoped<CountryService>();
+builder.Services.AddScoped<RegionService>();
+builder.Services.AddScoped<OriginService>();
+
 var app = builder.Build();
 
 // Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
 {
-    app.UseSwagger();
-    app.UseSwaggerUI();
+app.UseSwagger();
+app.UseSwaggerUI();
 }
 
-app.UseHttpsRedirection();
-app.UseAuthentication();
-app.UseAuthorization();
+// Solo usar HTTPS redirection si hay un puerto HTTPS configurado
+// Only use HTTPS redirection if HTTPS port is configured
+if (!string.IsNullOrEmpty(Environment.GetEnvironmentVariable("ASPNETCORE_HTTPS_PORT")) ||
+    app.Configuration.GetValue<bool>("UseHttpsRedirection", false))
+{
+    app.UseHttpsRedirection();
+}
 
-// Endpoint de autenticación para obtener token JWT
+app.UseAuthentication();
+app.UseAuthorization();// Endpoint de autenticación para obtener token JWT
 // Authentication endpoint to get JWT token
 app.MapPost("/api/auth/login", (LoginRequest request) =>
 {
@@ -88,541 +114,11 @@ app.MapPost("/api/auth/login", (LoginRequest request) =>
     return Results.Unauthorized(); // 401 si contraseña incorrecta
 }).WithName("Login");
 
-// Products endpoints
-// Endpoint GET para listar todos los productos con relaciones incluidas
-// GET endpoint to list all products with included relationships
-app.MapGet("/api/products", async (ApplicationDbContext db) =>
-{
-    var products = await db.Products
-        .Include(p => p.Category) // Incluir categoría
-        .Include(p => p.Brand) // Incluir marca
-        .Include(p => p.ProductType) // Incluir tipo de producto
-        .Include(p => p.Origin!).ThenInclude(o => o.Country) // Incluir origen con país
-        .Include(p => p.Origin!).ThenInclude(o => o.Region) // Incluir región
-        .ToListAsync();
-    
-    var productDtos = products.Select(p => new botilleria_clean_architecture_api.Core.Application.DTOs.ProductDto
-    {
-        Id = p.Id,
-        Name = p.Name,
-        Description = p.Description,
-        Price = p.Price,
-        DiscountPrice = p.DiscountPrice,
-        Volume = p.Volume ?? 0,
-        Unit = p.Unit ?? "ml",
-        AlcoholContent = p.AlcoholContent,
-        Stock = p.Stock,
-        IsAvailable = p.IsAvailable,
-        CreatedAt = p.CreatedAt,
-        UpdatedAt = p.UpdatedAt ?? DateTime.UtcNow,
-        Vintage = null, // Not in current model
-        Category = p.Category == null ? null : new botilleria_clean_architecture_api.Core.Application.DTOs.CategoryDto
-        {
-            Id = p.Category.Id,
-            Name = p.Category.Name,
-            Subcategory = p.Category.Subcategory
-        },
-        ProductType = p.ProductType == null ? null : new botilleria_clean_architecture_api.Core.Application.DTOs.ProductTypeDto
-        {
-            Id = p.ProductType.Id,
-            Name = p.ProductType.Name
-        },
-        Brand = p.Brand == null ? null : new botilleria_clean_architecture_api.Core.Application.DTOs.BrandDto
-        {
-            Id = p.Brand.Id,
-            Name = p.Brand.Name
-        },
-        Origin = p.Origin == null ? null : new botilleria_clean_architecture_api.Core.Application.DTOs.OriginDto
-        {
-            Id = p.Origin.Id,
-            Country = p.Origin.Country == null ? null : new botilleria_clean_architecture_api.Core.Application.DTOs.CountryDto
-            {
-                Id = p.Origin.Country.Id,
-                Name = p.Origin.Country.Name,
-                IsoCode = p.Origin.Country.IsoCode
-            },
-            Region = p.Origin.Region == null ? null : new botilleria_clean_architecture_api.Core.Application.DTOs.RegionDto
-            {
-                Id = p.Origin.Region.Id,
-                Name = p.Origin.Region.Name
-            },
-            Vineyard = p.Origin.Vineyard
-        },
-        Characteristics = p.Characteristics == null ? null : new botilleria_clean_architecture_api.Core.Application.DTOs.ProductCharacteristicsDto
-        {
-            Color = p.Characteristics.Color,
-            Aroma = p.Characteristics.Aroma,
-            Taste = p.Characteristics.Taste,
-            ServingTemperature = p.Characteristics.ServingTemperature,
-            FoodPairing = string.IsNullOrEmpty(p.Characteristics.FoodPairingJson) 
-                ? new List<string>() 
-                : System.Text.Json.JsonSerializer.Deserialize<List<string>>(p.Characteristics.FoodPairingJson) ?? new List<string>()
-        }
-    }).ToList();
-    
-    return Results.Ok(productDtos);
-}).WithName("GetProducts");
-
-// Endpoint GET para obtener un producto por ID (versión simplificada)
-// GET endpoint to get a product by ID (simplified version)
-app.MapGet("/api/products/{id:int}", async (int id, ApplicationDbContext db) =>
-{
-    var product = await db.Products
-        .Include(p => p.Category)
-        .Include(p => p.Brand)
-        .Include(p => p.ProductType)
-        .Include(p => p.Origin!).ThenInclude(o => o.Country)
-        .Include(p => p.Origin!).ThenInclude(o => o.Region)
-        .FirstOrDefaultAsync(p => p.Id == id);
-    
-    if (product == null) return Results.NotFound(); // 404 si no existe
-    
-    var dto = new ProductDto
-    {
-        Id = product.Id,
-        Name = product.Name,
-        Description = product.Description,
-        Price = product.Price,
-        DiscountPrice = product.DiscountPrice,
-        Volume = product.Volume ?? 0,
-        Unit = product.Unit,
-        AlcoholContent = product.AlcoholContent,
-        Stock = product.Stock,
-        IsAvailable = product.IsAvailable,
-        CreatedAt = product.CreatedAt,
-        UpdatedAt = product.UpdatedAt ?? DateTime.UtcNow,
-        Vintage = null, // Not in current model
-        Category = product.Category == null ? null : new CategoryDto
-        {
-            Id = product.Category.Id,
-            Name = product.Category.Name,
-            Subcategory = product.Category.Subcategory
-        },
-        ProductType = product.ProductType == null ? null : new ProductTypeDto
-        {
-            Id = product.ProductType.Id,
-            Name = product.ProductType.Name
-        },
-        Brand = product.Brand == null ? null : new BrandDto
-        {
-            Id = product.Brand.Id,
-            Name = product.Brand.Name
-        },
-        Origin = product.Origin == null ? null : new OriginDto
-        {
-            Id = product.Origin.Id,
-            Country = product.Origin.Country == null ? null : new CountryDto
-            {
-                Id = product.Origin.Country.Id,
-                Name = product.Origin.Country.Name,
-                IsoCode = product.Origin.Country.IsoCode
-            },
-            Region = product.Origin.Region == null ? null : new RegionDto
-            {
-                Id = product.Origin.Region.Id,
-                Name = product.Origin.Region.Name
-            },
-            Vineyard = product.Origin.Vineyard
-        },
-        Characteristics = product.Characteristics == null ? null : new ProductCharacteristicsDto
-        {
-            Color = product.Characteristics.Color,
-            Aroma = product.Characteristics.Aroma,
-            Taste = product.Characteristics.Taste,
-            ServingTemperature = product.Characteristics.ServingTemperature,
-            FoodPairing = string.IsNullOrEmpty(product.Characteristics.FoodPairingJson) ? new List<string>() : System.Text.Json.JsonSerializer.Deserialize<List<string>>(product.Characteristics.FoodPairingJson)
-        }
-    };
-    return Results.Ok(dto); // Retornar DTO para evitar ciclos
-}).WithName("GetProductById");
-
-// Endpoint POST para crear un producto (requiere JWT)
-// POST endpoint to create a product (requires JWT)
-app.MapPost("/api/products", [Microsoft.AspNetCore.Authorization.Authorize] async (CreateProductDto dto, ApplicationDbContext db) =>
-{
-    // Lógica de upsert mínima similar a la mutación GraphQL
-    // Minimal upsert logic similar to GraphQL mutation
-    Category? category = null;
-    if (dto.Category?.Id is > 0) category = await db.Categories.FindAsync(dto.Category.Id);
-    else if (!string.IsNullOrWhiteSpace(dto.Category?.Name))
-    {
-        category = await db.Categories.FirstOrDefaultAsync(c => c.Name == dto.Category.Name);
-        if (category == null) { category = new Category { Name = dto.Category.Name, Subcategory = dto.Category.Subcategory }; db.Categories.Add(category); }
-    }
-
-    Brand? brand = null;
-    if (dto.Brand?.Id is > 0) brand = await db.Brands.FindAsync(dto.Brand.Id);
-    else if (!string.IsNullOrWhiteSpace(dto.Brand?.Name))
-    {
-        brand = await db.Brands.FirstOrDefaultAsync(b => b.Name == dto.Brand.Name);
-        if (brand == null) { brand = new Brand { Name = dto.Brand.Name }; db.Brands.Add(brand); }
-    }
-
-    ProductType? ptype = null;
-    if (dto.Type?.Id is > 0) ptype = await db.ProductTypes.FindAsync(dto.Type.Id);
-    else if (!string.IsNullOrWhiteSpace(dto.Type?.Name))
-    {
-        ptype = await db.ProductTypes.FirstOrDefaultAsync(t => t.Name == dto.Type.Name);
-        if (ptype == null) { ptype = new ProductType { Name = dto.Type.Name }; db.ProductTypes.Add(ptype); }
-    }
-
-    // Handle Origin with Country and Region (both required by Origin model)
-    Origin? origin = null;
-    if (dto.Origin != null)
-    {
-        Country? country = null;
-        if (dto.Origin.Country?.Id is > 0) 
-        {
-            country = await db.Countries.FindAsync(dto.Origin.Country.Id);
-        }
-        else if (!string.IsNullOrWhiteSpace(dto.Origin.Country?.Name))
-        {
-            country = await db.Countries.FirstOrDefaultAsync(c => c.Name == dto.Origin.Country.Name);
-            if (country == null) 
-            { 
-                // IsoCode is required, use Subcategory or default to first 2 chars of name
-                string isoCode = !string.IsNullOrWhiteSpace(dto.Origin.Country.Subcategory) 
-                    ? dto.Origin.Country.Subcategory 
-                    : dto.Origin.Country.Name.Length >= 2 
-                        ? dto.Origin.Country.Name.Substring(0, 2).ToUpper() 
-                        : "XX";
-                
-                country = new Country { Name = dto.Origin.Country.Name, IsoCode = isoCode }; 
-                db.Countries.Add(country); 
-                await db.SaveChangesAsync(); // Save to get Country ID for FK
-            }
-        }
-
-        Region? region = null;
-        if (dto.Origin.Region?.Id is > 0) 
-        {
-            region = await db.Regions.FindAsync(dto.Origin.Region.Id);
-        }
-        else if (!string.IsNullOrWhiteSpace(dto.Origin.Region?.Name) && country != null)
-        {
-            region = await db.Regions.FirstOrDefaultAsync(r => r.Name == dto.Origin.Region.Name && r.CountryId == country.Id);
-            if (region == null) 
-            { 
-                region = new Region { Name = dto.Origin.Region.Name, Country = country }; 
-                db.Regions.Add(region); 
-                await db.SaveChangesAsync(); // Save to get Region ID for FK
-            }
-        }
-
-        // Only create Origin if both Country and Region exist (both are required by the model)
-        if (country != null && region != null)
-        {
-            origin = new Origin { Country = country, Region = region, Vineyard = dto.Origin.Vineyard };
-            db.Origins.Add(origin);
-        }
-    }
-
-    var product = new Product
-    {
-        Name = dto.Name,
-        Description = dto.Description,
-        Price = dto.Price,
-        DiscountPrice = dto.DiscountPrice,
-        Volume = dto.Volume,
-        Unit = dto.Unit,
-        AlcoholContent = dto.AlcoholContent,
-        Stock = dto.Stock,
-        IsAvailable = dto.IsAvailable,
-        CreatedAt = dto.CreatedAt ?? DateTime.UtcNow,
-        UpdatedAt = dto.UpdatedAt,
-        Category = category,
-        Brand = brand,
-        ProductType = ptype,
-        Origin = origin,
-        Characteristics = dto.Characteristics == null ? null : new Characteristics { Color = dto.Characteristics.Color, Aroma = dto.Characteristics.Aroma, Taste = dto.Characteristics.Taste, ServingTemperature = dto.Characteristics.ServingTemperature, FoodPairingJson = dto.Characteristics.FoodPairing == null ? null : System.Text.Json.JsonSerializer.Serialize(dto.Characteristics.FoodPairing) },
-        ReviewsCount = dto.Reviews?.Count ?? 0,
-        AverageRating = dto.Reviews?.AverageRating ?? 0m,
-        SelfLink = dto.Self?.Link
-    };
-
-    db.Products.Add(product);
-    await db.SaveChangesAsync();
-    return Results.Created($"/api/products/{product.Id}", product);
-}).WithName("CreateProduct");
-
-app.MapPut("/api/products/{id:int}", [Microsoft.AspNetCore.Authorization.Authorize] async (int id, CreateProductDto dto, ApplicationDbContext db) =>
-{
-    var existing = await db.Products
-        .Include(p => p.Category)
-        .Include(p => p.Brand)
-        .Include(p => p.ProductType)
-        .Include(p => p.Origin)
-        .FirstOrDefaultAsync(p => p.Id == id);
-    
-    if (existing == null) return Results.NotFound();
-    
-    // Update basic fields
-    existing.Name = dto.Name;
-    existing.Description = dto.Description;
-    existing.Price = dto.Price;
-    existing.DiscountPrice = dto.DiscountPrice;
-    existing.Volume = dto.Volume;
-    existing.Unit = dto.Unit;
-    existing.AlcoholContent = dto.AlcoholContent;
-    existing.Stock = dto.Stock;
-    existing.IsAvailable = dto.IsAvailable;
-    existing.UpdatedAt = DateTime.UtcNow;
-    
-    // Update Category
-    if (dto.Category?.Id is > 0)
-    {
-        existing.Category = await db.Categories.FindAsync(dto.Category.Id);
-    }
-    else if (!string.IsNullOrWhiteSpace(dto.Category?.Name))
-    {
-        var category = await db.Categories.FirstOrDefaultAsync(c => c.Name == dto.Category.Name);
-        if (category == null)
-        {
-            category = new Category { Name = dto.Category.Name, Subcategory = dto.Category.Subcategory };
-            db.Categories.Add(category);
-        }
-        existing.Category = category;
-    }
-    else if (dto.Category == null)
-    {
-        existing.Category = null;
-        existing.CategoryId = null;
-    }
-    
-    // Update Brand
-    if (dto.Brand?.Id is > 0)
-    {
-        existing.Brand = await db.Brands.FindAsync(dto.Brand.Id);
-    }
-    else if (!string.IsNullOrWhiteSpace(dto.Brand?.Name))
-    {
-        var brand = await db.Brands.FirstOrDefaultAsync(b => b.Name == dto.Brand.Name);
-        if (brand == null)
-        {
-            brand = new Brand { Name = dto.Brand.Name };
-            db.Brands.Add(brand);
-        }
-        existing.Brand = brand;
-    }
-    else if (dto.Brand == null)
-    {
-        existing.Brand = null;
-        existing.BrandId = null;
-    }
-    
-    // Update ProductType
-    if (dto.Type?.Id is > 0)
-    {
-        existing.ProductType = await db.ProductTypes.FindAsync(dto.Type.Id);
-    }
-    else if (!string.IsNullOrWhiteSpace(dto.Type?.Name))
-    {
-        var ptype = await db.ProductTypes.FirstOrDefaultAsync(t => t.Name == dto.Type.Name);
-        if (ptype == null)
-        {
-            ptype = new ProductType { Name = dto.Type.Name };
-            db.ProductTypes.Add(ptype);
-        }
-        existing.ProductType = ptype;
-    }
-    else if (dto.Type == null)
-    {
-        existing.ProductType = null;
-        existing.ProductTypeId = null;
-    }
-    
-    // Update Origin
-    if (dto.Origin != null)
-    {
-        Country? country = null;
-        if (dto.Origin.Country?.Id is > 0)
-        {
-            country = await db.Countries.FindAsync(dto.Origin.Country.Id);
-        }
-        else if (!string.IsNullOrWhiteSpace(dto.Origin.Country?.Name))
-        {
-            country = await db.Countries.FirstOrDefaultAsync(c => c.Name == dto.Origin.Country.Name);
-            if (country == null)
-            {
-                string isoCode = !string.IsNullOrWhiteSpace(dto.Origin.Country.Subcategory)
-                    ? dto.Origin.Country.Subcategory
-                    : dto.Origin.Country.Name.Length >= 2
-                        ? dto.Origin.Country.Name.Substring(0, 2).ToUpper()
-                        : "XX";
-                
-                country = new Country { Name = dto.Origin.Country.Name, IsoCode = isoCode };
-                db.Countries.Add(country);
-                await db.SaveChangesAsync();
-            }
-        }
-        
-        Region? region = null;
-        if (dto.Origin.Region?.Id is > 0)
-        {
-            region = await db.Regions.FindAsync(dto.Origin.Region.Id);
-        }
-        else if (!string.IsNullOrWhiteSpace(dto.Origin.Region?.Name) && country != null)
-        {
-            region = await db.Regions.FirstOrDefaultAsync(r => r.Name == dto.Origin.Region.Name && r.CountryId == country.Id);
-            if (region == null)
-            {
-                region = new Region { Name = dto.Origin.Region.Name, Country = country };
-                db.Regions.Add(region);
-                await db.SaveChangesAsync();
-            }
-        }
-        
-        if (country != null && region != null)
-        {
-            if (existing.Origin != null)
-            {
-                // Update existing Origin
-                existing.Origin.Country = country;
-                existing.Origin.Region = region;
-                existing.Origin.Vineyard = dto.Origin.Vineyard;
-            }
-            else
-            {
-                // Create new Origin
-                existing.Origin = new Origin { Country = country, Region = region, Vineyard = dto.Origin.Vineyard };
-            }
-        }
-    }
-    else if (dto.Origin == null)
-    {
-        existing.Origin = null;
-        existing.OriginId = null;
-    }
-    
-    // Update Characteristics
-    if (dto.Characteristics != null)
-    {
-        if (existing.Characteristics == null)
-        {
-            existing.Characteristics = new Characteristics();
-        }
-        existing.Characteristics.Color = dto.Characteristics.Color;
-        existing.Characteristics.Aroma = dto.Characteristics.Aroma;
-        existing.Characteristics.Taste = dto.Characteristics.Taste;
-        existing.Characteristics.ServingTemperature = dto.Characteristics.ServingTemperature;
-        existing.Characteristics.FoodPairingJson = dto.Characteristics.FoodPairing == null 
-            ? null 
-            : System.Text.Json.JsonSerializer.Serialize(dto.Characteristics.FoodPairing);
-    }
-    else if (dto.Characteristics == null)
-    {
-        existing.Characteristics = null;
-    }
-    
-    await db.SaveChangesAsync();
-    return Results.Ok(existing);
-}).WithName("UpdateProduct");
-
-app.MapDelete("/api/products/{id:int}", async (int id, ApplicationDbContext db) =>
-{
-    var existing = await db.Products.FindAsync(id);
-    if (existing == null) return Results.NotFound();
-    db.Products.Remove(existing);
-    await db.SaveChangesAsync();
-    return Results.NoContent();
-}).WithName("DeleteProduct");
-
-app.MapPatch("/api/products/{id:int}", async (int id, JsonPatchDocument<Product> patchDoc, ApplicationDbContext db) =>
-{
-    if (patchDoc == null) return Results.BadRequest();
-    var existing = await db.Products.FindAsync(id);
-    if (existing == null) return Results.NotFound();
-
-    // apply patch
-    patchDoc.ApplyTo(existing);
-    existing.UpdatedAt = DateTime.UtcNow;
-    await db.SaveChangesAsync();
-    return Results.NoContent();
-}).WithName("PatchProduct");
-
-// Categories endpoints
-app.MapGet("/api/categories", async (ApplicationDbContext db) =>
-{
-    var categories = await db.Categories.ToListAsync();
-    var dtos = categories.Select(c => new CategoryDto { Id = c.Id, Name = c.Name, Subcategory = c.Subcategory });
-    return Results.Ok(dtos);
-}).WithName("GetCategories");
-
-app.MapGet("/api/categories/{id:int}", async (int id, ApplicationDbContext db) =>
-{
-    var category = await db.Categories.FindAsync(id);
-    if (category == null) return Results.NotFound();
-    var dto = new CategoryDto { Id = category.Id, Name = category.Name, Subcategory = category.Subcategory };
-    return Results.Ok(dto);
-}).WithName("GetCategoryById");
-
-app.MapPost("/api/categories", [Authorize] async (CreateCategoryDto dto, ApplicationDbContext db) =>
-{
-    if (string.IsNullOrWhiteSpace(dto.Name)) return Results.BadRequest("Name is required");
-
-    var category = new Category { Name = dto.Name, Subcategory = dto.Subcategory };
-    db.Categories.Add(category);
-    await db.SaveChangesAsync();
-    var resultDto = new CategoryDto { Id = category.Id, Name = category.Name, Subcategory = category.Subcategory };
-    return Results.Created($"/api/categories/{category.Id}", resultDto);
-}).WithName("CreateCategory");
-
-// Brands endpoints
-app.MapGet("/api/brands", async (ApplicationDbContext db) =>
-{
-    var brands = await db.Brands.ToListAsync();
-    var dtos = brands.Select(b => new BrandDto { Id = b.Id, Name = b.Name });
-    return Results.Ok(dtos);
-}).WithName("GetBrands");
-
-app.MapGet("/api/brands/{id:int}", async (int id, ApplicationDbContext db) =>
-{
-    var brand = await db.Brands.FindAsync(id);
-    if (brand == null) return Results.NotFound();
-    var dto = new BrandDto { Id = brand.Id, Name = brand.Name };
-    return Results.Ok(dto);
-}).WithName("GetBrandById");
-
-app.MapPost("/api/brands", [Authorize] async (CreateBrandDto dto, ApplicationDbContext db) =>
-{
-    if (string.IsNullOrWhiteSpace(dto.Name)) return Results.BadRequest("Name is required");
-
-    var brand = new Brand { Name = dto.Name };
-    db.Brands.Add(brand);
-    await db.SaveChangesAsync();
-    var resultDto = new BrandDto { Id = brand.Id, Name = brand.Name };
-    return Results.Created($"/api/brands/{brand.Id}", resultDto);
-}).WithName("CreateBrand");
-
-// Product Types endpoints
-app.MapGet("/api/producttypes", async (ApplicationDbContext db) =>
-{
-    var productTypes = await db.ProductTypes.ToListAsync();
-    var dtos = productTypes.Select(pt => new ProductTypeDto { Id = pt.Id, Name = pt.Name });
-    return Results.Ok(dtos);
-}).WithName("GetProductTypes");
-
-app.MapGet("/api/producttypes/{id:int}", async (int id, ApplicationDbContext db) =>
-{
-    var productType = await db.ProductTypes.FindAsync(id);
-    if (productType == null) return Results.NotFound();
-    var dto = new ProductTypeDto { Id = productType.Id, Name = productType.Name };
-    return Results.Ok(dto);
-}).WithName("GetProductTypeById");
-
-app.MapPost("/api/producttypes", [Authorize] async (CreateProductTypeDto dto, ApplicationDbContext db) =>
-{
-    if (string.IsNullOrWhiteSpace(dto.Name)) return Results.BadRequest("Name is required");
-
-    var productType = new ProductType { Name = dto.Name };
-    db.ProductTypes.Add(productType);
-    await db.SaveChangesAsync();
-    var resultDto = new ProductTypeDto { Id = productType.Id, Name = productType.Name };
-    return Results.Created($"/api/producttypes/{productType.Id}", resultDto);
-}).WithName("CreateProductType");
-
+// Minimal API endpoints removed - functionality moved to controllers for clean architecture
 // GraphQL endpoint
 app.MapGraphQL("/graphql");
+
+app.MapControllers();
 
 app.Run();
 

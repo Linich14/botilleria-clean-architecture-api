@@ -7,24 +7,11 @@ namespace botilleria_clean_architecture_api.Core.Application.Services;
 
 public class ProductService
 {
-    private readonly IProductRepository _productRepository;
-    private readonly ICategoryRepository _categoryRepository;
-    private readonly IBrandRepository _brandRepository;
-    private readonly IProductTypeRepository _productTypeRepository;
-    private readonly IOriginRepository _originRepository;
+    private readonly IUnitOfWork _unitOfWork;
 
-    public ProductService(
-        IProductRepository productRepository,
-        ICategoryRepository categoryRepository,
-        IBrandRepository brandRepository,
-        IProductTypeRepository productTypeRepository,
-        IOriginRepository originRepository)
+    public ProductService(IUnitOfWork unitOfWork)
     {
-        _productRepository = productRepository;
-        _categoryRepository = categoryRepository;
-        _brandRepository = brandRepository;
-        _productTypeRepository = productTypeRepository;
-        _originRepository = originRepository;
+        _unitOfWork = unitOfWork;
     }
 
     public async Task<Product> CreateProductAsync(CreateProductCommand command)
@@ -54,32 +41,32 @@ public class ProductService
         // Asignar relaciones si se proporcionan IDs
         if (command.CategoryId.HasValue)
         {
-            var category = await _categoryRepository.GetByIdAsync(command.CategoryId.Value);
+            var category = await _unitOfWork.Categories.GetByIdAsync(command.CategoryId.Value);
             if (category != null) product.CategoryId = category.Id;
         }
         if (command.BrandId.HasValue)
         {
-            var brand = await _brandRepository.GetByIdAsync(command.BrandId.Value);
+            var brand = await _unitOfWork.Brands.GetByIdAsync(command.BrandId.Value);
             if (brand != null) product.BrandId = brand.Id;
         }
         if (command.ProductTypeId.HasValue)
         {
-            var productType = await _productTypeRepository.GetByIdAsync(command.ProductTypeId.Value);
+            var productType = await _unitOfWork.ProductTypes.GetByIdAsync(command.ProductTypeId.Value);
             if (productType != null) product.ProductTypeId = productType.Id;
         }
         if (command.OriginId.HasValue)
         {
-            var origin = await _originRepository.GetByIdAsync(command.OriginId.Value);
+            var origin = await _unitOfWork.Origins.GetByIdAsync(command.OriginId.Value);
             if (origin != null) product.OriginId = origin.Id;
         }
 
-        await _productRepository.AddAsync(product);
+        await _unitOfWork.Products.AddAsync(product);
         return product;
     }
 
     public async Task<Product?> UpdateProductAsync(UpdateProductCommand command)
     {
-        var product = await _productRepository.GetByIdAsync(command.Id);
+        var product = await _unitOfWork.Products.GetByIdAsync(command.Id);
         if (product == null) return null;
 
         product.Name = command.Name;
@@ -108,33 +95,112 @@ public class ProductService
         product.ProductTypeId = command.ProductTypeId;
         product.OriginId = command.OriginId;
 
-        await _productRepository.UpdateAsync(product);
+        await _unitOfWork.Products.UpdateAsync(product);
         return product;
     }
 
     public async Task<bool> DeleteProductAsync(DeleteProductCommand command)
     {
-        var product = await _productRepository.GetByIdAsync(command.Id);
+        var product = await _unitOfWork.Products.GetByIdAsync(command.Id);
         if (product == null) return false;
 
-        await _productRepository.DeleteAsync(product);
+        await _unitOfWork.Products.DeleteAsync(product);
         return true;
     }
 
     public async Task<Product?> GetProductAsync(GetProductQuery query)
     {
-        return await _productRepository.GetByIdAsync(query.Id);
+        return await _unitOfWork.Products.GetByIdAsync(query.Id);
     }
 
     public async Task<IEnumerable<Product>> GetProductsAsync(GetProductsQuery query)
     {
         if (query.CategoryId.HasValue)
-            return await _productRepository.GetProductsByCategoryAsync(query.CategoryId.Value);
+            return await _unitOfWork.Products.GetProductsByCategoryAsync(query.CategoryId.Value);
         if (query.BrandId.HasValue)
-            return await _productRepository.GetProductsByBrandAsync(query.BrandId.Value);
+            return await _unitOfWork.Products.GetProductsByBrandAsync(query.BrandId.Value);
         if (query.IsAvailable.HasValue && query.IsAvailable.Value)
-            return await _productRepository.GetAvailableProductsAsync();
+            return await _unitOfWork.Products.GetAvailableProductsAsync();
 
-        return await _productRepository.GetAllAsync();
+        return await _unitOfWork.Products.GetAllAsync();
+    }
+
+    /// <summary>
+    /// Ejemplo de uso de Unit of Work para transacciones ACID.
+    /// Crea un producto con todas sus entidades relacionadas en una sola transacción.
+    /// Si algo falla, toda la operación se revierte.
+    /// </summary>
+    public async Task<Product> CreateProductWithTransactionAsync(CreateProductCommand command)
+    {
+        await _unitOfWork.BeginTransactionAsync();
+
+        try
+        {
+            // Crear o encontrar entidades relacionadas
+            Category? category = null;
+            if (command.CategoryId.HasValue)
+            {
+                category = await _unitOfWork.Categories.GetByIdAsync(command.CategoryId.Value);
+            }
+
+            Brand? brand = null;
+            if (command.BrandId.HasValue)
+            {
+                brand = await _unitOfWork.Brands.GetByIdAsync(command.BrandId.Value);
+            }
+
+            ProductType? productType = null;
+            if (command.ProductTypeId.HasValue)
+            {
+                productType = await _unitOfWork.ProductTypes.GetByIdAsync(command.ProductTypeId.Value);
+            }
+
+            Origin? origin = null;
+            if (command.OriginId.HasValue)
+            {
+                origin = await _unitOfWork.Origins.GetByIdAsync(command.OriginId.Value);
+            }
+
+            // Crear el producto
+            var product = new Product
+            {
+                Name = command.Name,
+                Description = command.Description,
+                Price = command.Price,
+                DiscountPrice = command.DiscountPrice,
+                Volume = command.Volume,
+                Unit = command.Unit,
+                AlcoholContent = command.AlcoholContent,
+                Stock = command.Stock,
+                IsAvailable = command.IsAvailable,
+                CreatedAt = DateTime.UtcNow,
+                Characteristics = new Characteristics
+                {
+                    Color = command.Color,
+                    Aroma = command.Aroma,
+                    Taste = command.Taste,
+                    ServingTemperature = command.ServingTemperature,
+                    FoodPairingJson = command.FoodPairing != null ? System.Text.Json.JsonSerializer.Serialize(command.FoodPairing) : null
+                },
+                Category = category,
+                Brand = brand,
+                ProductType = productType,
+                Origin = origin
+            };
+
+            await _unitOfWork.Products.AddAsync(product);
+
+            // Guardar todos los cambios en una sola transacción
+            await _unitOfWork.SaveChangesAsync();
+            await _unitOfWork.CommitTransactionAsync();
+
+            return product;
+        }
+        catch (Exception)
+        {
+            // Si algo falla, revertir toda la transacción
+            await _unitOfWork.RollbackTransactionAsync();
+            throw;
+        }
     }
 }
