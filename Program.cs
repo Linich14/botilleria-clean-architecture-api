@@ -5,10 +5,12 @@ using Microsoft.IdentityModel.Tokens;
 using System.IdentityModel.Tokens.Jwt;
 using System.Text;
 using botilleria_clean_architecture_api;
+using botilleria_clean_architecture_api.Core.Domain.Entities;
+using botilleria_clean_architecture_api.Infrastructure.Persistence;
 using HotChocolate;
 using Microsoft.AspNetCore.JsonPatch;
 using Microsoft.AspNetCore.Mvc;
-using botilleria_clean_architecture_api.DTOs;
+using botilleria_clean_architecture_api.Core.Application.DTOs;
 using HotChocolate.AspNetCore;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -48,8 +50,8 @@ builder.Services.AddAuthentication(options =>
 // GraphQL
 builder.Services
     .AddGraphQLServer()
-    .AddQueryType<botilleria_clean_architecture_api.GraphQL.Query>()
-    .AddMutationType<botilleria_clean_architecture_api.GraphQL.Mutation>()
+    .AddQueryType<botilleria_clean_architecture_api.Presentation.API.GraphQL.Query>()
+    .AddMutationType<botilleria_clean_architecture_api.Presentation.API.GraphQL.Mutation>()
     .AddProjections()
     .AddFiltering()
     .AddSorting();
@@ -99,7 +101,7 @@ app.MapGet("/api/products", async (ApplicationDbContext db) =>
         .Include(p => p.Origin!).ThenInclude(o => o.Region) // Incluir región
         .ToListAsync();
     
-    var productDtos = products.Select(p => new botilleria_clean_architecture_api.DTOs.ProductDto
+    var productDtos = products.Select(p => new botilleria_clean_architecture_api.Core.Application.DTOs.ProductDto
     {
         Id = p.Id,
         Name = p.Name,
@@ -114,39 +116,39 @@ app.MapGet("/api/products", async (ApplicationDbContext db) =>
         CreatedAt = p.CreatedAt,
         UpdatedAt = p.UpdatedAt ?? DateTime.UtcNow,
         Vintage = null, // Not in current model
-        Category = p.Category == null ? null : new botilleria_clean_architecture_api.DTOs.CategoryDto
+        Category = p.Category == null ? null : new botilleria_clean_architecture_api.Core.Application.DTOs.CategoryDto
         {
             Id = p.Category.Id,
             Name = p.Category.Name,
             Subcategory = p.Category.Subcategory
         },
-        ProductType = p.ProductType == null ? null : new botilleria_clean_architecture_api.DTOs.ProductTypeDto
+        ProductType = p.ProductType == null ? null : new botilleria_clean_architecture_api.Core.Application.DTOs.ProductTypeDto
         {
             Id = p.ProductType.Id,
             Name = p.ProductType.Name
         },
-        Brand = p.Brand == null ? null : new botilleria_clean_architecture_api.DTOs.BrandDto
+        Brand = p.Brand == null ? null : new botilleria_clean_architecture_api.Core.Application.DTOs.BrandDto
         {
             Id = p.Brand.Id,
             Name = p.Brand.Name
         },
-        Origin = p.Origin == null ? null : new botilleria_clean_architecture_api.DTOs.OriginDto
+        Origin = p.Origin == null ? null : new botilleria_clean_architecture_api.Core.Application.DTOs.OriginDto
         {
             Id = p.Origin.Id,
-            Country = p.Origin.Country == null ? null : new botilleria_clean_architecture_api.DTOs.CountryDto
+            Country = p.Origin.Country == null ? null : new botilleria_clean_architecture_api.Core.Application.DTOs.CountryDto
             {
                 Id = p.Origin.Country.Id,
                 Name = p.Origin.Country.Name,
                 IsoCode = p.Origin.Country.IsoCode
             },
-            Region = p.Origin.Region == null ? null : new botilleria_clean_architecture_api.DTOs.RegionDto
+            Region = p.Origin.Region == null ? null : new botilleria_clean_architecture_api.Core.Application.DTOs.RegionDto
             {
                 Id = p.Origin.Region.Id,
                 Name = p.Origin.Region.Name
             },
             Vineyard = p.Origin.Vineyard
         },
-        Characteristics = p.Characteristics == null ? null : new botilleria_clean_architecture_api.DTOs.ProductCharacteristicsDto
+        Characteristics = p.Characteristics == null ? null : new botilleria_clean_architecture_api.Core.Application.DTOs.ProductCharacteristicsDto
         {
             Color = p.Characteristics.Color,
             Aroma = p.Characteristics.Aroma,

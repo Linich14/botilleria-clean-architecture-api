@@ -1,7 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using botilleria_clean_architecture_api.Core.Domain.Entities;
 
-namespace botilleria_clean_architecture_api;
+namespace botilleria_clean_architecture_api.Infrastructure.Persistence;
 
 public class ApplicationDbContext : DbContext
 {
