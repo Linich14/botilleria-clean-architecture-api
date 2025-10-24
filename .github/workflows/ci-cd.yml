@@ -1,4 +1,4 @@
-name: CI/CD Pipeline
+name: Pipeline CI/CD
 
 on:
   push:
@@ -12,110 +12,110 @@ env:
   BUILD_CONFIGURATION: 'Release'
 
 jobs:
-  build-and-test:
-    name: Build and Test
+  compilar-y-probar:
+    name: Compilar y Probar
     runs-on: ubuntu-latest
     
     steps:
-    - name: 📥 Checkout code
+    - name: Obtener código
       uses: actions/checkout@v4
       
-    - name: 🔧 Setup .NET
+    - name: Configurar .NET
       uses: actions/setup-dotnet@v4
       with:
         dotnet-version: ${{ env.DOTNET_VERSION }}
         
-    - name: 📦 Restore dependencies
+    - name: Restaurar dependencias
       run: dotnet restore botilleria-clean-architecture-api.csproj
       
-    - name: 🏗️ Build project
+    - name: Compilar proyecto
       run: dotnet build botilleria-clean-architecture-api.csproj --configuration ${{ env.BUILD_CONFIGURATION }} --no-restore
       
-    - name: 🧪 Run tests
+    - name: Ejecutar pruebas
       run: |
         if dotnet test --list-tests 2>&1 | grep -q "Test run"; then
-          echo "Running tests..."
-          dotnet test --configuration ${{ env.BUILD_CONFIGURATION }} --no-build --verbosity normal --logger "trx;LogFileName=test-results.trx" || echo "Tests failed but continuing..."
+          echo "Ejecutando pruebas..."
+          dotnet test --configuration ${{ env.BUILD_CONFIGURATION }} --no-build --verbosity normal --logger "trx;LogFileName=test-results.trx" || echo "Las pruebas fallaron pero se continúa..."
         else
-          echo "No tests found in the project. Skipping test execution."
-          echo "To add tests, create a test project with: dotnet new xunit -n YourProject.Tests"
+          echo "No se encontraron pruebas en el proyecto. Omitiendo ejecución de pruebas."
+          echo "Para agregar pruebas, crea un proyecto de pruebas con: dotnet new xunit -n YourProject.Tests"
         fi
       continue-on-error: true
       
-    - name: 📊 Publish test results
+    - name: Publicar resultados de pruebas
       uses: dorny/test-reporter@v1
       if: always() && hashFiles('**/test-results.trx') != ''
       with:
-        name: Test Results
+        name: Resultados de Pruebas
         path: '**/test-results.trx'
         reporter: dotnet-trx
         fail-on-error: false
         
-    - name: ✅ Build success notification
+    - name: Notificación de compilación exitosa
       if: success()
-      run: echo "✅ Build and tests completed successfully!"
+      run: echo "Compilación y pruebas completadas exitosamente"
       
-    - name: ❌ Build failure notification
+    - name: Notificación de compilación fallida
       if: failure()
-      run: echo "❌ Build or tests failed. Please check the logs."
+      run: echo "La compilación o las pruebas fallaron. Por favor revisa los logs."
 
-  code-quality:
-    name: Code Quality Check
+  calidad-codigo:
+    name: Verificación de Calidad de Código
     runs-on: ubuntu-latest
     
     steps:
-    - name: 📥 Checkout code
+    - name: Obtener código
       uses: actions/checkout@v4
       
-    - name: 🔧 Setup .NET
+    - name: Configurar .NET
       uses: actions/setup-dotnet@v4
       with:
         dotnet-version: ${{ env.DOTNET_VERSION }}
         
-    - name: 🔍 Check code format
+    - name: Verificar formato de código
       run: dotnet format botilleria-clean-architecture-api.csproj --verify-no-changes --verbosity diagnostic || true
       continue-on-error: true
       
-    - name: 📝 Build warnings check
+    - name: Verificar advertencias de compilación
       run: dotnet build botilleria-clean-architecture-api.csproj --configuration ${{ env.BUILD_CONFIGURATION }}
 
-  security-scan:
-    name: Security Scan
+  escaneo-seguridad:
+    name: Escaneo de Seguridad
     runs-on: ubuntu-latest
     
     steps:
-    - name: 📥 Checkout code
+    - name: Obtener código
       uses: actions/checkout@v4
       
-    - name: 🔧 Setup .NET
+    - name: Configurar .NET
       uses: actions/setup-dotnet@v4
       with:
         dotnet-version: ${{ env.DOTNET_VERSION }}
         
-    - name: 🔒 Run security scan
+    - name: Ejecutar escaneo de seguridad
       run: |
         dotnet restore botilleria-clean-architecture-api.csproj
         dotnet list botilleria-clean-architecture-api.csproj package --vulnerable --include-transitive 2>&1 || true
         dotnet list botilleria-clean-architecture-api.csproj package --deprecated 2>&1 || true
 
-  summary:
-    name: Deployment Summary
+  resumen:
+    name: Resumen de Ejecución
     runs-on: ubuntu-latest
-    needs: [build-and-test, code-quality, security-scan]
+    needs: [compilar-y-probar, calidad-codigo, escaneo-seguridad]
     if: always()
     
     steps:
-    - name: 📋 Generate summary
+    - name: Generar resumen
       run: |
-        echo "## 🚀 CI/CD Pipeline Summary" >> $GITHUB_STEP_SUMMARY
+        echo "## Resumen del Pipeline CI/CD" >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY
-        echo "✅ Pipeline execution completed" >> $GITHUB_STEP_SUMMARY
-        echo "- Build Status: ${{ needs.build-and-test.result }}" >> $GITHUB_STEP_SUMMARY
-        echo "- Code Quality: ${{ needs.code-quality.result }}" >> $GITHUB_STEP_SUMMARY
-        echo "- Security Scan: ${{ needs.security-scan.result }}" >> $GITHUB_STEP_SUMMARY
+        echo "Pipeline ejecutado completamente" >> $GITHUB_STEP_SUMMARY
+        echo "- Estado de Compilación: ${{ needs.compilar-y-probar.result }}" >> $GITHUB_STEP_SUMMARY
+        echo "- Calidad de Código: ${{ needs.calidad-codigo.result }}" >> $GITHUB_STEP_SUMMARY
+        echo "- Escaneo de Seguridad: ${{ needs.escaneo-seguridad.result }}" >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY
-        echo "### 📊 Project Info" >> $GITHUB_STEP_SUMMARY
-        echo "- .NET Version: ${{ env.DOTNET_VERSION }}" >> $GITHUB_STEP_SUMMARY
-        echo "- Configuration: ${{ env.BUILD_CONFIGURATION }}" >> $GITHUB_STEP_SUMMARY
-        echo "- Branch: ${{ github.ref_name }}" >> $GITHUB_STEP_SUMMARY
+        echo "### Información del Proyecto" >> $GITHUB_STEP_SUMMARY
+        echo "- Versión de .NET: ${{ env.DOTNET_VERSION }}" >> $GITHUB_STEP_SUMMARY
+        echo "- Configuración: ${{ env.BUILD_CONFIGURATION }}" >> $GITHUB_STEP_SUMMARY
+        echo "- Rama: ${{ github.ref_name }}" >> $GITHUB_STEP_SUMMARY
         echo "- Commit: ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY

@@ -11,6 +11,9 @@ using Microsoft.AspNetCore.Http;
 
 namespace botilleria_clean_architecture_api.Tests;
 
+/// <summary>
+/// Pruebas unitarias para ProductService
+/// </summary>
 public class ProductServiceTests
 {
     private readonly Mock<IUnitOfWork> _mockUnitOfWork;
@@ -27,7 +30,7 @@ public class ProductServiceTests
     }
 
     [Fact]
-    public async Task CreateProductAsync_ShouldCreateProduct_WhenValidDataProvided()
+    public async Task CrearProductoAsync_DebeCrearProducto_CuandoLosDatosSonValidos()
     {
         // Arrange
         var command = new CreateProductCommand
@@ -79,13 +82,13 @@ public class ProductServiceTests
     }
 
     [Fact]
-    public async Task GetProductAsync_ShouldReturnProduct_WhenProductExists()
+    public async Task ObtenerProductoAsync_DebeRetornarProducto_CuandoElProductoExiste()
     {
-        // Arrange
-        var productId = 1;
-        var expectedProduct = new Product
+        // Preparar (Arrange)
+        var idProducto = 1;
+        var productoEsperado = new Product
         {
-            Id = productId,
+            Id = idProducto,
             Name = "Vino Tinto Existente",
             Description = "Descripción del vino",
             Price = 15000,
@@ -93,20 +96,20 @@ public class ProductServiceTests
             IsAvailable = true
         };
 
-        _mockUnitOfWork.Setup(x => x.Products.GetByIdAsync(productId))
-            .ReturnsAsync(expectedProduct);
+        _mockUnitOfWork.Setup(x => x.Products.GetByIdAsync(idProducto))
+            .ReturnsAsync(productoEsperado);
 
-        // Act
-        var result = await _productService.GetProductAsync(
-            new Core.Application.DTOs.Queries.GetProductQuery { Id = productId });
+        // Actuar (Act)
+        var resultado = await _productService.GetProductAsync(
+            new Core.Application.DTOs.Queries.GetProductQuery { Id = idProducto });
 
-        // Assert
-        result.Should().NotBeNull();
-        result.Id.Should().Be(productId);
-        result.Name.Should().Be("Vino Tinto Existente");
-        result.Price.Should().Be(15000);
-        result.Stock.Should().Be(20);
+        // Verificar (Assert)
+        resultado.Should().NotBeNull();
+        resultado.Id.Should().Be(idProducto);
+        resultado.Name.Should().Be("Vino Tinto Existente");
+        resultado.Price.Should().Be(15000);
+        resultado.Stock.Should().Be(20);
 
-        _mockUnitOfWork.Verify(x => x.Products.GetByIdAsync(productId), Times.Once);
+        _mockUnitOfWork.Verify(x => x.Products.GetByIdAsync(idProducto), Times.Once);
     }
 }

@@ -10,6 +10,9 @@ using Microsoft.AspNetCore.Http;
 
 namespace botilleria_clean_architecture_api.Tests;
 
+/// <summary>
+/// Pruebas unitarias para BrandService
+/// </summary>
 public class BrandServiceTests
 {
     private readonly Mock<IUnitOfWork> _mockUnitOfWork;
@@ -26,10 +29,10 @@ public class BrandServiceTests
     }
 
     [Fact]
-    public async Task GetBrandsAsync_ShouldReturnAllBrands()
+    public async Task ObtenerMarcasAsync_DebeRetornarTodasLasMarcas()
     {
-        // Arrange
-        var expectedBrands = new List<Brand>
+        // Preparar (Arrange)
+        var marcasEsperadas = new List<Brand>
         {
             new Brand { Id = 1, Name = "Concha y Toro" },
             new Brand { Id = 2, Name = "Santa Rita" },
@@ -37,26 +40,26 @@ public class BrandServiceTests
         };
 
         _mockUnitOfWork.Setup(x => x.Brands.GetAllAsync())
-            .ReturnsAsync(expectedBrands);
+            .ReturnsAsync(marcasEsperadas);
 
-        // Act
-        var result = await _brandService.GetBrandsAsync(new GetBrandsQuery());
+        // Actuar (Act)
+        var resultado = await _brandService.GetBrandsAsync(new GetBrandsQuery());
 
-        // Assert
-        result.Should().NotBeNull();
-        result.Should().HaveCount(3);
-        result.Should().Contain(b => b.Name == "Concha y Toro");
-        result.Should().Contain(b => b.Name == "Santa Rita");
-        result.Should().Contain(b => b.Name == "Casillero del Diablo");
+        // Verificar (Assert)
+        resultado.Should().NotBeNull();
+        resultado.Should().HaveCount(3);
+        resultado.Should().Contain(b => b.Name == "Concha y Toro");
+        resultado.Should().Contain(b => b.Name == "Santa Rita");
+        resultado.Should().Contain(b => b.Name == "Casillero del Diablo");
 
         _mockUnitOfWork.Verify(x => x.Brands.GetAllAsync(), Times.Once);
     }
 
     [Fact]
-    public async Task CreateBrandAsync_ShouldCreateBrand_WhenValidDataProvided()
+    public async Task CrearMarcaAsync_DebeCrearMarca_CuandoLosDatosSonValidos()
     {
-        // Arrange
-        var command = new CreateBrandCommand
+        // Preparar (Arrange)
+        var comando = new CreateBrandCommand
         {
             Name = "Nueva Marca Test"
         };
@@ -72,12 +75,12 @@ public class BrandServiceTests
         _mockUnitOfWork.Setup(x => x.AuditLogs)
             .Returns(mockAuditLogRepo.Object);
 
-        // Act
-        var result = await _brandService.CreateBrandAsync(command);
+        // Actuar (Act)
+        var resultado = await _brandService.CreateBrandAsync(comando);
 
-        // Assert
-        result.Should().NotBeNull();
-        result.Name.Should().Be("Nueva Marca Test");
+        // Verificar (Assert)
+        resultado.Should().NotBeNull();
+        resultado.Name.Should().Be("Nueva Marca Test");
 
         _mockUnitOfWork.Verify(x => x.Brands.AddAsync(It.IsAny<Brand>()), Times.Once);
         _mockUnitOfWork.Verify(x => x.SaveChangesAsync(), Times.AtLeastOnce);
