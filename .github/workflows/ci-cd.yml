@@ -32,12 +32,19 @@ jobs:
       run: dotnet build botilleria-clean-architecture-api.csproj --configuration ${{ env.BUILD_CONFIGURATION }} --no-restore
       
     - name: 🧪 Run tests
-      run: dotnet test --configuration ${{ env.BUILD_CONFIGURATION }} --no-build --verbosity normal --logger "trx;LogFileName=test-results.trx" || true
+      run: |
+        if dotnet test --list-tests 2>&1 | grep -q "Test run"; then
+          echo "Running tests..."
+          dotnet test --configuration ${{ env.BUILD_CONFIGURATION }} --no-build --verbosity normal --logger "trx;LogFileName=test-results.trx" || echo "Tests failed but continuing..."
+        else
+          echo "No tests found in the project. Skipping test execution."
+          echo "To add tests, create a test project with: dotnet new xunit -n YourProject.Tests"
+        fi
       continue-on-error: true
       
     - name: 📊 Publish test results
       uses: dorny/test-reporter@v1
-      if: always()
+      if: always() && hashFiles('**/test-results.trx') != ''
       with:
         name: Test Results
         path: '**/test-results.trx'
