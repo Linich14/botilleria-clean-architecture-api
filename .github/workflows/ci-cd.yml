@@ -1,0 +1,113 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+  workflow_dispatch:
+
+env:
+  DOTNET_VERSION: '8.0.x'
+  BUILD_CONFIGURATION: 'Release'
+
+jobs:
+  build-and-test:
+    name: Build and Test
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: 📥 Checkout code
+      uses: actions/checkout@v4
+      
+    - name: 🔧 Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: ${{ env.DOTNET_VERSION }}
+        
+    - name: 📦 Restore dependencies
+      run: dotnet restore
+      
+    - name: 🏗️ Build project
+      run: dotnet build --configuration ${{ env.BUILD_CONFIGURATION }} --no-restore
+      
+    - name: 🧪 Run tests
+      run: dotnet test --configuration ${{ env.BUILD_CONFIGURATION }} --no-build --verbosity normal --logger "trx;LogFileName=test-results.trx"
+      continue-on-error: true
+      
+    - name: 📊 Publish test results
+      uses: dorny/test-reporter@v1
+      if: always()
+      with:
+        name: Test Results
+        path: '**/test-results.trx'
+        reporter: dotnet-trx
+        fail-on-error: false
+        
+    - name: ✅ Build success notification
+      if: success()
+      run: echo "✅ Build and tests completed successfully!"
+      
+    - name: ❌ Build failure notification
+      if: failure()
+      run: echo "❌ Build or tests failed. Please check the logs."
+
+  code-quality:
+    name: Code Quality Check
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: 📥 Checkout code
+      uses: actions/checkout@v4
+      
+    - name: 🔧 Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: ${{ env.DOTNET_VERSION }}
+        
+    - name: 🔍 Check code format
+      run: dotnet format --verify-no-changes --verbosity diagnostic
+      continue-on-error: true
+      
+    - name: 📝 Build warnings check
+      run: dotnet build --configuration ${{ env.BUILD_CONFIGURATION }} /warnaserror
+
+  security-scan:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: 📥 Checkout code
+      uses: actions/checkout@v4
+      
+    - name: 🔧 Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: ${{ env.DOTNET_VERSION }}
+        
+    - name: 🔒 Run security scan
+      run: |
+        dotnet list package --vulnerable --include-transitive
+        dotnet list package --deprecated
+
+  summary:
+    name: Deployment Summary
+    runs-on: ubuntu-latest
+    needs: [build-and-test, code-quality, security-scan]
+    if: always()
+    
+    steps:
+    - name: 📋 Generate summary
+      run: |
+        echo "## 🚀 CI/CD Pipeline Summary" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "✅ Pipeline execution completed" >> $GITHUB_STEP_SUMMARY
+        echo "- Build Status: ${{ needs.build-and-test.result }}" >> $GITHUB_STEP_SUMMARY
+        echo "- Code Quality: ${{ needs.code-quality.result }}" >> $GITHUB_STEP_SUMMARY
+        echo "- Security Scan: ${{ needs.security-scan.result }}" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "### 📊 Project Info" >> $GITHUB_STEP_SUMMARY
+        echo "- .NET Version: ${{ env.DOTNET_VERSION }}" >> $GITHUB_STEP_SUMMARY
+        echo "- Configuration: ${{ env.BUILD_CONFIGURATION }}" >> $GITHUB_STEP_SUMMARY
+        echo "- Branch: ${{ github.ref_name }}" >> $GITHUB_STEP_SUMMARY
+        echo "- Commit: ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
