@@ -55,7 +55,7 @@ builder.Services.AddAuthentication(options =>
 // Consultas avanzadas y modificaciones de datos
 builder.Services
     .AddGraphQLServer()
-    .AddQueryType<botilleria_clean_architecture_api.Presentation.API.GraphQL.Query>()
+    .AddQueryType<botilleria_clean_architecture_api.GraphQL.Query>()
     .AddMutationType<botilleria_clean_architecture_api.Presentation.API.GraphQL.Mutation>()
     .AddProjections()
     .AddFiltering()

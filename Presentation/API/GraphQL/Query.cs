@@ -1,18 +1,18 @@
 // Consultas flexibles para explorar datos de manera personalizada
 using HotChocolate;
+using HotChocolate.Data;
 using botilleria_clean_architecture_api.Core.Domain.Entities;
 using botilleria_clean_architecture_api.Core.Application.Services;
 using botilleria_clean_architecture_api.Core.Application.DTOs.Queries;
+using botilleria_clean_architecture_api.Infrastructure.Persistence;
 
-namespace botilleria_clean_architecture_api.Presentation.API.GraphQL;
+namespace botilleria_clean_architecture_api.GraphQL;
 
 public class Query
 {
-    public async Task<IEnumerable<Product>> GetProducts([Service] ProductService productService)
-    {
-        var products = await productService.GetProductsAsync(new GetProductsQuery());
-        return products;
-    }
+    [UseFiltering]
+    [UseSorting]
+    public IQueryable<Product> GetProducts([Service] ApplicationDbContext db) => db.Products.AsQueryable();
 
     public async Task<Product?> GetProduct(int id, [Service] ProductService productService)
     {
