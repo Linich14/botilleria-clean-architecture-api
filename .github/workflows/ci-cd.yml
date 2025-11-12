@@ -79,8 +79,120 @@ jobs:
     - name: Verificar advertencias de compilación
       run: dotnet build botilleria-clean-architecture-api.csproj --configuration ${{ env.BUILD_CONFIGURATION }}
 
+  # OWASP A03:2025 - Software Supply Chain Failures
+  escaneo-dependencias-sbom:
+    name: A03 - Escaneo Dependencias + SBOM
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    
+    steps:
+    - name: Obtener código
+      uses: actions/checkout@v4
+      
+    - name: Configurar .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: ${{ env.DOTNET_VERSION }}
+        
+    - name: Escanear dependencias vulnerables (NuGet)
+      run: |
+        echo "Escaneando dependencias vulnerables..."
+        dotnet restore botilleria-clean-architecture-api.csproj
+        dotnet list botilleria-clean-architecture-api.csproj package --vulnerable --include-transitive 2>&1 | tee vulnerable-packages.txt
+        dotnet list botilleria-clean-architecture-api.csproj package --deprecated 2>&1 | tee deprecated-packages.txt
+        
+        # Verificar si hay vulnerabilidades críticas o altas
+        if grep -qiE "(critical|high)" vulnerable-packages.txt; then
+          echo "ALERTA: Se encontraron vulnerabilidades CRITICAS o ALTAS"
+          cat vulnerable-packages.txt
+          exit 1
+        else
+          echo "No se encontraron vulnerabilidades criticas"
+        fi
+      continue-on-error: false
+    
+    - name: Instalar Syft para generar SBOM
+      run: |
+        curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b /usr/local/bin
+        
+    - name: Generar SBOM (Software Bill of Materials)
+      run: |
+        echo "Generando SBOM en formato SPDX y CycloneDX..."
+        syft dir:. -o spdx-json=sbom-spdx.json
+        syft dir:. -o cyclonedx-json=sbom-cyclonedx.json
+        echo "SBOM generado exitosamente"
+        
+    - name: Subir SBOM como artefacto
+      uses: actions/upload-artifact@v4
+      with:
+        name: sbom-reports
+        path: |
+          sbom-spdx.json
+          sbom-cyclonedx.json
+        retention-days: 90
+
+  # OWASP A05:2025 - Injection (SQL, XSS, Command Injection)
+  codeql-sast:
+    name: A05 - CodeQL SAST (Injection)
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+      actions: read
+      contents: read
+    
+    steps:
+    - name: Obtener código
+      uses: actions/checkout@v4
+      
+    - name: Inicializar CodeQL
+      uses: github/codeql-action/init@v3
+      with:
+        languages: 'csharp'
+        queries: +security-extended,security-and-quality
+        
+    - name: Configurar .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: ${{ env.DOTNET_VERSION }}
+        
+    - name: Compilar proyecto para análisis
+      run: |
+        dotnet restore botilleria-clean-architecture-api.csproj
+        dotnet build botilleria-clean-architecture-api.csproj --configuration Release --no-restore
+        
+    - name: Ejecutar análisis CodeQL
+      uses: github/codeql-action/analyze@v3
+      with:
+        category: "/language:csharp"
+
+  # OWASP A04:2025 - Cryptographic Failures (Secretos expuestos)
+  gitleaks-secrets:
+    name: A04 - Gitleaks (Secretos)
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Obtener código
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0  # Necesario para escanear todo el historial
+        
+    - name: Ejecutar Gitleaks
+      uses: gitleaks/gitleaks-action@v2
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}  # Opcional, solo para pro
+        
+    - name: Verificar resultados
+      if: failure()
+      run: |
+        echo "ALERTA: Se detectaron secretos expuestos en el codigo"
+        echo "Por favor revisa el reporte y elimina cualquier credencial, API key o token"
+        exit 1
+
   escaneo-seguridad:
-    name: Escaneo de Seguridad
+    name: Escaneo de Seguridad (Legacy)
     runs-on: ubuntu-latest
     
     steps:
@@ -101,21 +213,29 @@ jobs:
   resumen:
     name: Resumen de Ejecución
     runs-on: ubuntu-latest
-    needs: [compilar-y-probar, calidad-codigo, escaneo-seguridad]
+    needs: [compilar-y-probar, calidad-codigo, escaneo-dependencias-sbom, codeql-sast, gitleaks-secrets, escaneo-seguridad]
     if: always()
     
     steps:
     - name: Generar resumen
       run: |
-        echo "## Resumen del Pipeline CI/CD" >> $GITHUB_STEP_SUMMARY
+        echo "## Resumen del Pipeline CI/CD con OWASP Top 10" >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY
-        echo "Pipeline ejecutado completamente" >> $GITHUB_STEP_SUMMARY
-        echo "- Estado de Compilación: ${{ needs.compilar-y-probar.result }}" >> $GITHUB_STEP_SUMMARY
-        echo "- Calidad de Código: ${{ needs.calidad-codigo.result }}" >> $GITHUB_STEP_SUMMARY
-        echo "- Escaneo de Seguridad: ${{ needs.escaneo-seguridad.result }}" >> $GITHUB_STEP_SUMMARY
+        echo "### Estado de los Jobs" >> $GITHUB_STEP_SUMMARY
+        echo "- Compilacion y Pruebas: ${{ needs.compilar-y-probar.result }}" >> $GITHUB_STEP_SUMMARY
+        echo "- Calidad de Codigo: ${{ needs.calidad-codigo.result }}" >> $GITHUB_STEP_SUMMARY
+        echo "- A03 - Dependencias + SBOM: ${{ needs.escaneo-dependencias-sbom.result }}" >> $GITHUB_STEP_SUMMARY
+        echo "- A05 - CodeQL SAST: ${{ needs.codeql-sast.result }}" >> $GITHUB_STEP_SUMMARY
+        echo "- A04 - Gitleaks (Secretos): ${{ needs.gitleaks-secrets.result }}" >> $GITHUB_STEP_SUMMARY
+        echo "- Escaneo Seguridad Legacy: ${{ needs.escaneo-seguridad.result }}" >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY
-        echo "### Información del Proyecto" >> $GITHUB_STEP_SUMMARY
-        echo "- Versión de .NET: ${{ env.DOTNET_VERSION }}" >> $GITHUB_STEP_SUMMARY
-        echo "- Configuración: ${{ env.BUILD_CONFIGURATION }}" >> $GITHUB_STEP_SUMMARY
+        echo "### Informacion del Proyecto" >> $GITHUB_STEP_SUMMARY
+        echo "- Version de .NET: ${{ env.DOTNET_VERSION }}" >> $GITHUB_STEP_SUMMARY
+        echo "- Configuracion: ${{ env.BUILD_CONFIGURATION }}" >> $GITHUB_STEP_SUMMARY
         echo "- Rama: ${{ github.ref_name }}" >> $GITHUB_STEP_SUMMARY
         echo "- Commit: ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "### Controles OWASP Implementados" >> $GITHUB_STEP_SUMMARY
+        echo "- A03:2025 - Software Supply Chain Failures (Dependabot + SBOM)" >> $GITHUB_STEP_SUMMARY
+        echo "- A05:2025 - Injection (CodeQL SAST)" >> $GITHUB_STEP_SUMMARY
+        echo "- A04:2025 - Cryptographic Failures (Gitleaks)" >> $GITHUB_STEP_SUMMARY
