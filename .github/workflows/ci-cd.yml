@@ -133,6 +133,122 @@ jobs:
           sbom-cyclonedx.json
         retention-days: 90
 
+  # OWASP A02:2025 - Security Misconfiguration
+  escaneo-configuracion:
+    name: A02 - Security Misconfiguration
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Obtener código
+      uses: actions/checkout@v4
+      
+    - name: Instalar Semgrep
+      run: pip install semgrep
+      
+    - name: Escanear configuraciones con Semgrep
+      run: |
+        echo "Escaneando configuraciones de seguridad..."
+        semgrep --config=p/security-audit \
+                --config=p/csharp \
+                --json --output=semgrep-results.json || true
+                
+    - name: Verificar appsettings.json
+      run: |
+        echo "Verificando configuraciones peligrosas..."
+        
+        # Verificar DetailedErrors en produccion
+        if grep -r "DetailedErrors.*true" appsettings.json 2>/dev/null; then
+          echo "ALERTA: DetailedErrors habilitado en appsettings.json"
+          exit 1
+        fi
+        
+        # Verificar AllowedHosts demasiado permisivo
+        if grep -r '"AllowedHosts".*"\*"' appsettings.json 2>/dev/null; then
+          echo "ADVERTENCIA: AllowedHosts configurado como * (muy permisivo)"
+        fi
+        
+        # Verificar CORS permisivo
+        if grep -ri "AllowAnyOrigin\|AllowAnyHeader\|AllowAnyMethod" Program.cs 2>/dev/null; then
+          echo "ADVERTENCIA: CORS configurado de forma permisiva"
+        fi
+        
+        echo "Verificacion de configuraciones completada"
+      continue-on-error: false
+      
+    - name: Subir resultados de Semgrep
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: semgrep-results
+        path: semgrep-results.json
+        retention-days: 30
+
+  # OWASP A09:2025 - Logging & Alerting Failures
+  verificar-logging:
+    name: A09 - Logging & Alerting
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Obtener código
+      uses: actions/checkout@v4
+      
+    - name: Verificar logs con informacion sensible
+      run: |
+        echo "Escaneando logs con informacion sensible..."
+        
+        # Buscar passwords, secrets, tokens en logs
+        if grep -ri "password\|apikey\|api_key\|secret\|token" \
+           --include="*.cs" \
+           --exclude-dir=Tests \
+           . | grep -i "log\|console\.write"; then
+          echo "ALERTA: Posible logging de informacion sensible detectado"
+          exit 1
+        fi
+        
+        echo "No se detectaron logs con informacion sensible"
+        
+    - name: Verificar uso de ILogger en servicios
+      run: |
+        echo "Verificando que servicios implementen logging..."
+        
+        # Contar servicios
+        service_count=$(find ./Core/Application/Services -name "*.cs" 2>/dev/null | wc -l)
+        
+        if [ "$service_count" -gt 0 ]; then
+          # Verificar que usen ILogger
+          logger_count=$(grep -r "ILogger" ./Core/Application/Services --include="*.cs" 2>/dev/null | wc -l)
+          
+          echo "Servicios encontrados: $service_count"
+          echo "Referencias a ILogger: $logger_count"
+          
+          if [ "$logger_count" -eq 0 ]; then
+            echo "ADVERTENCIA: No se encontro uso de ILogger en servicios"
+          else
+            echo "Logging implementado correctamente en servicios"
+          fi
+        else
+          echo "No se encontraron servicios para verificar"
+        fi
+        
+    - name: Verificar niveles de log apropiados
+      run: |
+        echo "Verificando niveles de log..."
+        
+        # Verificar que no se use LogInformation para errores
+        if grep -r "LogInformation.*Exception\|LogInformation.*Error" \
+           --include="*.cs" \
+           ./Core 2>/dev/null; then
+          echo "ADVERTENCIA: Posible uso incorrecto de LogInformation para errores"
+        fi
+        
+        # Verificar que errores criticos usen LogError o LogCritical
+        if grep -r "catch.*Exception" --include="*.cs" ./Core 2>/dev/null | \
+           grep -v "LogError\|LogCritical" 2>/dev/null; then
+          echo "ADVERTENCIA: Bloques catch sin logging apropiado"
+        fi
+        
+        echo "Verificacion de niveles de log completada"
+
   # OWASP A05:2025 - Injection (SQL, XSS, Command Injection)
   codeql-sast:
     name: A05 - CodeQL SAST (Injection)
@@ -213,7 +329,7 @@ jobs:
   resumen:
     name: Resumen de Ejecución
     runs-on: ubuntu-latest
-    needs: [compilar-y-probar, calidad-codigo, escaneo-dependencias-sbom, codeql-sast, gitleaks-secrets, escaneo-seguridad]
+    needs: [compilar-y-probar, calidad-codigo, escaneo-dependencias-sbom, escaneo-configuracion, verificar-logging, codeql-sast, gitleaks-secrets, escaneo-seguridad]
     if: always()
     
     steps:
@@ -224,9 +340,11 @@ jobs:
         echo "### Estado de los Jobs" >> $GITHUB_STEP_SUMMARY
         echo "- Compilacion y Pruebas: ${{ needs.compilar-y-probar.result }}" >> $GITHUB_STEP_SUMMARY
         echo "- Calidad de Codigo: ${{ needs.calidad-codigo.result }}" >> $GITHUB_STEP_SUMMARY
+        echo "- A02 - Misconfiguration: ${{ needs.escaneo-configuracion.result }}" >> $GITHUB_STEP_SUMMARY
         echo "- A03 - Dependencias + SBOM: ${{ needs.escaneo-dependencias-sbom.result }}" >> $GITHUB_STEP_SUMMARY
         echo "- A05 - CodeQL SAST: ${{ needs.codeql-sast.result }}" >> $GITHUB_STEP_SUMMARY
         echo "- A04 - Gitleaks (Secretos): ${{ needs.gitleaks-secrets.result }}" >> $GITHUB_STEP_SUMMARY
+        echo "- A09 - Logging & Alerting: ${{ needs.verificar-logging.result }}" >> $GITHUB_STEP_SUMMARY
         echo "- Escaneo Seguridad Legacy: ${{ needs.escaneo-seguridad.result }}" >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY
         echo "### Informacion del Proyecto" >> $GITHUB_STEP_SUMMARY
@@ -236,6 +354,8 @@ jobs:
         echo "- Commit: ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY
         echo "### Controles OWASP Implementados" >> $GITHUB_STEP_SUMMARY
+        echo "- A02:2025 - Security Misconfiguration (Semgrep)" >> $GITHUB_STEP_SUMMARY
         echo "- A03:2025 - Software Supply Chain Failures (Dependabot + SBOM)" >> $GITHUB_STEP_SUMMARY
-        echo "- A05:2025 - Injection (CodeQL SAST)" >> $GITHUB_STEP_SUMMARY
         echo "- A04:2025 - Cryptographic Failures (Gitleaks)" >> $GITHUB_STEP_SUMMARY
+        echo "- A05:2025 - Injection (CodeQL SAST)" >> $GITHUB_STEP_SUMMARY
+        echo "- A09:2025 - Logging & Alerting Failures (Log Verification)" >> $GITHUB_STEP_SUMMARY
